@@ -184,7 +184,7 @@ Trav ran all of them on both phones and reported that everything passed, both sc
 
 ### The rest of v1
 
-The remaining order: 3 data model, exercise library, and Hevy import (done, section 6); 4 routines; 5 workout card flow, offline storage and sync, plate math, finish and export; 6 history, PRs, charts, body-part volume; 7 measurements and the Foodlog summary API.
+The remaining order: 3 data model, exercise library, and Hevy import (done, section 6); 4 routines (done, section 7); 5 workout card flow, offline storage and sync, plate math, finish and export; 6 history, PRs, charts, body-part volume; 7 measurements and the Foodlog summary API.
 
 ## 6. Spec 3: data model, exercise library, Hevy import
 
@@ -219,9 +219,49 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 | Library, history, settings on desktop and both phones; wife sees none of Trav's data | isolation test passes; phones pending (install `10-688e3de`) |
 | pg_dump before the migration; stack under memory limits | done (see above) |
 
-## 7. Known gaps
+## 7. Spec 4: routines
+
+**Status:** built, tested, and deployed as `ef095a4` on October 9, 2026. Waiting on Trav's checks on the page and phones (table below). No new Android build was published; run `scripts/android-build.sh` and `scripts/android-publish.sh` so the phones get the new pages.
+
+### What exists
+
+- **Schema** (`0005`): `routine_folders`, `routines`, `routine_versions`, `routine_exercises`, `routine_sets`, all scoped per user, plus `workouts.routine_version_id` (empty until Spec 5). A trigger makes versions, their exercises, and their sets immutable. Model and rules are in `CLAUDE.md` (Routines).
+- **Routes:** `GET /api/routines?archived=`, `PUT /api/routines/layout` (folder order, and each folder's routines in order), `POST/PATCH/DELETE /api/folders[/{id}]`, `POST /api/folders/{id}/duplicate`, `POST /api/routines`, `GET/PATCH/DELETE /api/routines/{id}`, `POST /api/routines/{id}/duplicate`, `POST /api/routines/{id}/versions` (409 `version_conflict` on a stale parent), `GET /api/routines/{id}/versions[/{vid}]`, `POST /api/routines/from-workout`.
+- **Pages:** the bottom nav is now Routines, History, Library, Settings. Import moved to Settings (`/settings/import`).
+  - **Routines** (`/`): folders with their routines in order, "Not in a folder" below. Options per folder or routine: rename, move to another folder, duplicate, archive or restore, delete (only if no workout used it), earlier versions. Reorder mode: drag handles plus move up and move down buttons, with each move read out for screen readers. Show archived on demand.
+  - **Editor** (`/routines/new`, `/routines/{id}`): add from your library (several at once), reorder by buttons on each card or in reorder mode (drag or buttons), supersets with "Superset with the next exercise" (up to three, a rest after each round), rest and notes per exercise. Per set: add (copies the last set), remove, move, set type, reps fixed or a range, and weight, RPE, time, or distance depending on the logging type. Save makes a new version; leaving with unsaved changes asks first; a conflict offers to load the latest and never overwrites.
+  - **Versions** (`/routines/{id}/versions`): every version, newest first, each readable as it was saved.
+  - **Save as routine:** a button at the bottom of a workout in History. Name defaults to the workout title; pick a folder, no folder, or a new one.
+- **Prefill rule:** `frontend/app/src/lib/prefill.ts`, exported for Spec 5, not used by any screen yet. Rule in `CLAUDE.md`.
+- **Tests:** 44 backend (5 new in `test_routines.py`: new version leaves the old one unchanged, stale parent is a conflict, the database refuses updates to a version, superset rules, save as routine copies sets and skips RPE, delete only when unused, user isolation for folders, routines, and versions) and 6 frontend (`frontend/app/tests/prefill.test.ts`, Node's own test runner, no new packages). `0005` downgrades and upgrades cleanly.
+- **Deploy:** `scripts/deploy.sh` wrote `predeploy/liftlog-20261009-225136-before-ef095a4.dump` before `0005` ran. Memory after deploy: backend 65 MiB, db 23 MiB, tailscale 30 MiB, web 12 MiB, all well under their limits.
+
+### Choices made while building (not in the spec)
+
+- A rep range with no history prefills its low end.
+- Prefill also carries duration and distance the same way as weight and reps. A field the past set left empty falls back to the target.
+- Moving an exercise takes it out of its superset, so a group never splits by accident.
+- Deleting an unused folder deletes the routines in it, after asking.
+- A routine's name lives on the routine, not the version. Renaming doesn't make a new version.
+- Exercises are added from your library only. New exercises are made in Library first.
+
+### Acceptance
+
+| Check | Result |
+|---|---|
+| Trav saves his latest Day 1 to Day 4 workouts as routines in one folder, then edits one to use rep ranges and a different target on one set | pending (Trav) |
+| Editing makes a new version; the old one is still readable | test passes; on the page under Versions, pending (Trav) |
+| Editor works on desktop and both phones, reordering by drag and by buttons | pending (Trav). Not checked in a browser this session (no browser tools), and the phones need a new APK |
+| Tests pass | 44 backend, 6 frontend, build passes |
+| Wife sees none of Trav's folders or routines and can make her own | isolation test passes; on her phone, pending |
+| Dump before migrations; memory under limits | done (see above) |
+
+## 8. Known gaps
 
 - The timer test screen is temporary and is removed when the workout screen is built (Spec 5).
+- Routine editing needs a connection. Viewing and starting routines offline is Spec 5; offline editing comes after v1 (the conflict check and client ids are ready for it).
+- Reordering while archived routines are hidden leaves their positions alone, so a restored one can land between others.
+- Weight targets keep the unit they were entered in. Changing your weight unit in Settings doesn't convert existing targets.
 - The app uses Capacitor's default launcher icon and splash.
 - `localStorage` holds the timer test state and the last-seen play through silent setting. Real on-device storage (IndexedDB) and sync are Spec 5.
 - No trigger stops a finished workout from being updated in place; the rule holds because no endpoint edits workouts. Spec 5's edit flow writes `workout_changes`.
