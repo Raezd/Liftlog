@@ -61,7 +61,7 @@ export RESTIC_CACHE_DIR="${RESTIC_CACHE_DIR:-/var/cache/restic}"
 command -v restic >/dev/null || fail "restic is not installed"
 
 # A stale dump is worth knowing about, but the rest is still worth backing up.
-newest="$(find "$DUMPS/daily" -maxdepth 1 -name 'liftlog-*.dump' -printf '%T@\n' 2>/dev/null | sort -rn | head -1)"
+newest="$(find "$DUMPS/daily" -maxdepth 1 -name 'liftlog-*.dump' -printf '%T@\n' 2>/dev/null | sort -rn | head -1 || true)"
 if [ -z "$newest" ]; then
   notify "Warning on $(hostname): no Liftlog dump found. Check liftlog-backup.timer."
 elif [ $(( $(date +%s) - ${newest%.*} )) -gt $(( 26 * 3600 )) ]; then

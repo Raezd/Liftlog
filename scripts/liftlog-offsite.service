@@ -1,6 +1,6 @@
 [Unit]
 Description=Liftlog off-site restic backup to Backblaze B2
-After=docker.service network-online.target
+After=docker.service network-online.target liftlog-backup.service
 Wants=network-online.target
 
 [Service]
