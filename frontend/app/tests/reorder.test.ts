@@ -1,7 +1,7 @@
 // The superset move rules (src/lib/reorder.ts). `npm test`.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { moveExercise, moveUnit, stepExercise } from "../src/lib/reorder.ts";
+import { moveExercise, moveUnit, removeExercise, stepExercise } from "../src/lib/reorder.ts";
 import type { Linked } from "../src/lib/reorder.ts";
 
 type Ex = Linked & { name: string };
@@ -72,4 +72,18 @@ test("a whole superset moves as one unit", () => {
 test("edges are no-ops", () => {
   assert.equal(show(stepExercise(list(L), 0, -1)), L.replace("B", "B*"));
   assert.equal(show(moveUnit(list(L), 0, -1)), L.replace("B", "B*"));
+});
+
+test("removing an exercise keeps the rest of its superset grouped", () => {
+  // The middle of three: the other two stay a superset.
+  assert.equal(show(removeExercise(list(L), 2)), "A [B* D] E");
+  // The first of three: the rest moves to the new first.
+  assert.equal(show(removeExercise(list(L), 1)), "A [C* D] E");
+  assert.equal(show(removeExercise(list(L), 3)), "A [B* C] E");
+  // A lone survivor is a standalone exercise again.
+  assert.equal(show(removeExercise(list("A [B C] D"), 1)), "A C D");
+  assert.equal(show(removeExercise(list("A [B C] D"), 2)), "A B D");
+  // A lone exercise next to a superset leaves the superset alone.
+  assert.equal(show(removeExercise(list(L), 0)), "[B* C D] E");
+  assert.equal(show(removeExercise(list(L), 4)), "A [B* C D]");
 });

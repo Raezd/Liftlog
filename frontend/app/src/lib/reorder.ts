@@ -127,6 +127,20 @@ export function stepExercise<T extends Linked>(items: T[], i: number, dir: -1 | 
   return moveExercise(items, i, to);
 }
 
+/** Removes the exercise at index i. The rest of its superset stays grouped
+ *  when two or more remain (with the rest after each round on whichever is
+ *  first now); a lone survivor becomes a standalone exercise. */
+export function removeExercise<T extends Linked>(items: T[], i: number): T[] {
+  const us = units(items);
+  let u = 0, k = i;
+  while (k >= us[u].length) k -= us[u++].length;
+  const left = us[u].filter((_, j) => j !== k);
+  const rest = us.slice();
+  if (left.length) rest[u] = relink(left, us[u][0].supersetRest);
+  else rest.splice(u, 1);
+  return flat(rest);
+}
+
 /** Can the step buttons move this exercise? */
 export function canStep<T extends Linked>(items: T[], i: number, dir: -1 | 1): boolean {
   if (groupOf(items, i)) return true;

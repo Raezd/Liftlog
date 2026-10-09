@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, ErrorText, Loading, Page, Segmented, SelectField, TextField, btn } from "../components/ui";
 import { send } from "../lib/api";
+import { refresh } from "../lib/offline";
 import { useMe } from "../lib/queries";
 import type { DistanceUnit, Me, WeightUnit } from "../lib/types";
 import { rememberAlertSetting } from "../timer/alertSetting";
@@ -39,6 +40,7 @@ export default function Settings() {
     onSuccess: (data) => {
       qc.setQueryData(["me"], data);
       rememberAlertSetting(data.play_through_silent);
+      void refresh(true);
       setSaved(true);
     },
   });
@@ -88,9 +90,7 @@ export default function Settings() {
           <div className="flex justify-between gap-3 py-1"><dt className="text-muted">Signed in as</dt><dd className="break-all font-bold">{me.data?.login ?? "..."}</dd></div>
           <div className="flex justify-between gap-3 py-1"><dt className="text-muted">Version</dt><dd className="font-bold">{__BUILD_ID__}</dd></div>
         </dl>
-        {Capacitor.isNativePlatform()
-          ? <Link to="/timer-test" className={`${btn.secondary} mt-3 w-full`}>Rest timer test</Link>
-          : <a href="/download" className={`${btn.secondary} mt-3 w-full`}>Get the Android app</a>}
+        {!Capacitor.isNativePlatform() && <a href="/download" className={`${btn.secondary} mt-3 w-full`}>Get the Android app</a>}
       </Card>
     </Page>
   );

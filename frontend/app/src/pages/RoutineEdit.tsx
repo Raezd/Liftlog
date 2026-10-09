@@ -10,7 +10,8 @@ import { ApiError, get, send } from "../lib/api";
 import { LOGGING, SET_TYPE, duration } from "../lib/format";
 import { uuid7 } from "../lib/ids";
 import { useMe } from "../lib/queries";
-import { canStep, describeExercise, describeUnit, moveUnit, stepExercise, supersetLetters, unitIndexAt, units } from "../lib/reorder";
+import { canStep, describeExercise, describeUnit, moveUnit, removeExercise, stepExercise, supersetLetters, unitIndexAt, units } from "../lib/reorder";
+import { FIELDS, isNumber, parseDuration } from "../lib/session";
 import type { DistanceUnit, Exercise, LoggingType, RoutineDetail, RoutineVersion, SetType, WeightUnit } from "../lib/types";
 import { useRoutineList } from "./Routines";
 
@@ -44,16 +45,6 @@ type EEx = {
 
 type Form = { name: string; exercises: EEx[] };
 
-type Fields = { reps: boolean; weight: string | null; duration: boolean; distance: boolean; rpe: boolean };
-const FIELDS: Record<LoggingType, Fields> = {
-  weight_reps: { reps: true, weight: "Weight", duration: false, distance: false, rpe: true },
-  bodyweight_reps: { reps: true, weight: null, duration: false, distance: false, rpe: true },
-  weighted_bodyweight: { reps: true, weight: "Added weight", duration: false, distance: false, rpe: true },
-  assisted_bodyweight: { reps: true, weight: "Assistance", duration: false, distance: false, rpe: true },
-  duration: { reps: false, weight: null, duration: true, distance: false, rpe: true },
-  distance_duration: { reps: false, weight: null, duration: true, distance: true, rpe: false },
-};
-
 const RPE_OPTIONS: [string, string][] = [["", "None"], ...["6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10"].map((v): [string, string] => [v, v])];
 const SET_TYPES = Object.entries(SET_TYPE) as [SetType, string][];
 
@@ -62,18 +53,6 @@ function restOptions(current: number | null): [string, string][] {
   if (current !== null && !secs.includes(current)) secs.push(current);
   return [["", "Off"], ...secs.sort((a, b) => a - b).map((s): [string, string] => [String(s), duration(s)])];
 }
-
-/** "1:30" or "1:02:00" to seconds. A plain number is seconds. */
-function parseDuration(text: string): number | null | undefined {
-  const t = text.trim();
-  if (!t) return null;
-  if (/^\d+$/.test(t)) return Number(t);
-  const m = /^(?:(\d+):)?(\d+):([0-5]\d)$/.exec(t);
-  if (!m) return undefined;
-  return Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]);
-}
-
-const isNumber = (t: string) => /^\d+(\.\d+)?$/.test(t.trim());
 
 function blankSet(unit: WeightUnit, like?: ESet): ESet {
   return like
@@ -284,7 +263,7 @@ export default function RoutineEdit() {
                 onStep={(dir) => stepEx(i, dir)} onStepGroup={(dir) => stepGroup(i, dir)}
                 canLink={i < exs.length - 1 && (ch[i]?.[1] ?? 1) + (ch[i + 1]?.[1] ?? 1) <= 3}
                 onChange={(next) => setEx(i, next)}
-                onRemove={() => set({ exercises: exs.filter((_, j) => j !== i).map((x, j) => (j === i - 1 ? { ...x, linkNext: false } : x)) })} />
+                onRemove={() => set({ exercises: removeExercise(exs, i) })} />
             ))}
           </ol>
         )}

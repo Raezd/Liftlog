@@ -8,8 +8,6 @@ import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
-import android.service.notification.StatusBarNotification;
-import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -18,9 +16,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
  * Rest timer plumbing the local notifications plugin doesn't cover: the
- * channels, in-app playback, permission status, and when each alert was
- * posted. Scheduling itself is @capacitor/local-notifications with
- * allowWhileIdle (path A, chosen in Spec 2).
+ * channels, in-app playback, and permission status. Scheduling itself uses the
+ * local notifications plugin with allowWhileIdle (path A, chosen in Spec 2).
  */
 @CapacitorPlugin(name = "RestAlarm")
 public class RestAlarmPlugin extends Plugin {
@@ -76,22 +73,6 @@ public class RestAlarmPlugin extends Plugin {
     public void playNow(PluginCall call) {
         RestAlerts.playInApp(getContext(), Boolean.TRUE.equals(call.getBoolean("alarmStream", false)));
         call.resolve();
-    }
-
-    /** Notifications showing right now, with the time each was posted. */
-    @PluginMethod
-    public void delivered(PluginCall call) {
-        NotificationManager nm = getContext().getSystemService(NotificationManager.class);
-        JSArray list = new JSArray();
-        for (StatusBarNotification sbn : nm.getActiveNotifications()) {
-            JSObject o = new JSObject();
-            o.put("id", sbn.getId());
-            o.put("postTime", sbn.getPostTime());
-            list.put(o);
-        }
-        JSObject r = new JSObject();
-        r.put("notifications", list);
-        call.resolve(r);
     }
 
     /** { kind: "notifications" | "exactAlarms" | "app" } */

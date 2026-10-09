@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { History, Pencil } from "lucide-react";
+import { History, Pencil, Play } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { Badge, ErrorText, Loading, Page, btn } from "../components/ui";
+import { Badge, Button, ErrorText, Loading, Page, btn } from "../components/ui";
 import { get } from "../lib/api";
+import { cached, routineFromCopy } from "../lib/offline";
+import { useStartWorkout } from "../lib/start";
 import type { RoutineDetail } from "../lib/types";
 import { useRoutineList } from "./Routines";
 import { VersionView } from "./RoutineVersions";
+import { isNative } from "./Workout";
 
 /** Set by Save as routine, so this page can confirm where it went. */
 export type SavedState = { saved: { folder: string | null } };
@@ -14,7 +17,11 @@ export type SavedState = { saved: { folder: string | null } };
 export default function RoutineView() {
   const { id } = useParams();
   const saved = (useLocation().state as SavedState | null)?.saved;
-  const q = useQuery({ queryKey: ["routine", id], queryFn: () => get<RoutineDetail>(`/api/routines/${id}`) });
+  const q = useQuery({
+    queryKey: ["routine", id],
+    queryFn: cached(() => get<RoutineDetail>(`/api/routines/${id}`), (c) => routineFromCopy(c, id!)),
+  });
+  const starter = useStartWorkout();
   const list = useRoutineList(true);
   const r = q.data;
   const folder = r?.folder_id ? list.data?.folders.find((f) => f.id === r.folder_id)?.name : null;
@@ -35,6 +42,13 @@ export default function RoutineView() {
             {folder ?? (r.folder_id ? "" : "Not in a folder")}
             {r.archived && <Badge tone="muted">Archived</Badge>}
           </p>
+          {isNative() && !r.archived && (
+            <Button variant="primary" className="mb-4 w-full" disabled={starter.busy} onClick={() => void starter.start(r.id)}>
+              <Play size={20} aria-hidden /> Start workout
+            </Button>
+          )}
+          {starter.problem && <p role="alert" className="mb-3 font-bold text-over">{starter.problem}</p>}
+          {starter.sheet}
           <VersionView v={r.current_version} />
           <p className="mt-4 text-sm text-muted">W is a warm-up, D a drop set, F a set to failure.</p>
           <Link to={`/routines/${id}/versions`} className={`${btn.quiet} mt-2 w-full`}><History size={18} aria-hidden /> Versions</Link>

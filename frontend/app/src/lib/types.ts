@@ -71,10 +71,14 @@ export type WorkoutSet = {
   duration_seconds: number | null;
   distance_value: string | null;
   distance_unit: DistanceUnit | "m" | null;
+  completed_at: string | null;
 };
 
 export type WorkoutDetail = Omit<WorkoutSummary, "exercise_count" | "set_count"> & {
   notes: string;
+  /** The routine version it started from, and that version's routine. Null for imports and empty workouts. */
+  routine_version_id: string | null;
+  routine_id: string | null;
   exercises: {
     id: string;
     exercise_id: string;
@@ -83,6 +87,7 @@ export type WorkoutDetail = Omit<WorkoutSummary, "exercise_count" | "set_count">
     position: number;
     superset_group: number | null;
     notes: string;
+    rest_seconds: number | null;
     sets: WorkoutSet[];
   }[];
 };
@@ -186,3 +191,15 @@ export type Folder = { id: string; name: string; position: number; archived: boo
 export type RoutineList = { folders: Folder[]; routines: RoutineSummary[] };
 
 export type VersionSummary = { id: string; number: number; created_at: string; current: boolean };
+
+/** GET /api/offline: everything the phone keeps for offline use. */
+export type OfflineCopy = {
+  me: Me;
+  exercises: Exercise[];
+  /** Archived folders and routines included. */
+  routines: RoutineList;
+  /** Routine id -> its current version. */
+  versions: Record<string, RoutineVersion>;
+  /** Every workout, newest first. */
+  workouts: WorkoutDetail[];
+};

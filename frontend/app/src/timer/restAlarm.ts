@@ -7,8 +7,8 @@ import { LocalNotifications } from "@capacitor/local-notifications";
  * after it passed every test, including forced idle.
  *
  * The app's own RestAlarm plugin (RestAlarmPlugin.java) owns the channels and
- * covers what the notifications plugin doesn't: in-app playback, permission
- * status, and when each alert was posted.
+ * covers what the notifications plugin doesn't: in-app playback and
+ * permission status.
  *
  * Timer state is an absolute end time, never a countdown, so it survives the
  * app being backgrounded or killed.
@@ -26,7 +26,6 @@ interface RestAlarmPlugin {
   status(): Promise<NativeStatus>;
   isForeground(): Promise<{ foreground: boolean }>;
   playNow(o: { alarmStream: boolean }): Promise<void>;
-  delivered(): Promise<{ notifications: { id: number; postTime: number }[] }>;
   openSettings(o: { kind: "notifications" | "exactAlarms" | "app" }): Promise<void>;
 }
 

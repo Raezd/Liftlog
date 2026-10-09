@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderPlus, MoreHorizontal, Plus } from "lucide-react";
+import { FolderPlus, MoreHorizontal, Play, Plus } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Sheet } from "../components/Sheet";
@@ -8,12 +8,18 @@ import { Badge, Button, Chip, ErrorText, Loading, Page, SelectField, TextField, 
 import { get, send } from "../lib/api";
 import { plural } from "../lib/format";
 import { uuid7 } from "../lib/ids";
+import { cached, routineListFromCopy } from "../lib/offline";
+import { useStartWorkout } from "../lib/start";
 import type { Folder, RoutineList, RoutineSummary } from "../lib/types";
+import { isNative } from "./Workout";
 
 type Target = { kind: "folder"; folder: Folder } | { kind: "routine"; routine: RoutineSummary } | { kind: "new-folder" };
 
 export const useRoutineList = (archived = false) =>
-  useQuery({ queryKey: ["routines", archived], queryFn: () => get<RoutineList>(`/api/routines?archived=${archived}`) });
+  useQuery({
+    queryKey: ["routines", archived],
+    queryFn: cached(() => get<RoutineList>(`/api/routines?archived=${archived}`), (c) => routineListFromCopy(c, archived)),
+  });
 
 /** Your programs (folders) and their days (routines), in your order. */
 export default function Routines() {
@@ -23,6 +29,8 @@ export default function Routines() {
   const qc = useQueryClient();
   const list = useRoutineList(archived);
   const data = list.data;
+  const starter = useStartWorkout();
+  const onStart = isNative() ? starter.start : null;
 
   const layout = useMutation({
     mutationFn: (next: RoutineList) => send("PUT", "/api/routines/layout", {
@@ -38,6 +46,13 @@ export default function Routines() {
 
   return (
     <Page title="Routines" action={<Link to="/routines/new" className={btn.primary}><Plus size={20} aria-hidden /> New</Link>}>
+      {onStart && !reorder && (
+        <Button variant="primary" className="mb-4 w-full" disabled={starter.busy} onClick={() => void onStart(null)}>
+          <Play size={20} aria-hidden /> Start empty workout
+        </Button>
+      )}
+      {starter.problem && <p role="alert" className="mb-3 font-bold text-over">{starter.problem}</p>}
+      {starter.sheet}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Chip label="Show archived" checked={archived} onChange={setArchived} />
         {!empty && data && (
@@ -68,7 +83,7 @@ export default function Routines() {
                   <MoreButton label={`Options for ${f.name}`} onClick={() => setTarget({ kind: "folder", folder: f })} />
                 </span>
               </div>
-              <RoutineRows routines={f.routines} onMore={(r) => setTarget({ kind: "routine", routine: r })} />
+              <RoutineRows routines={f.routines} onStart={onStart} busy={starter.busy} onMore={(r) => setTarget({ kind: "routine", routine: r })} />
               <Link to={`/routines/new?folder=${f.id}`} className={`${btn.quiet} m-1`}>
                 <Plus size={18} aria-hidden /> Add a routine<span className="sr-only"> to {f.name}</span>
               </Link>
@@ -77,7 +92,7 @@ export default function Routines() {
           {data.routines.length > 0 && (
             <section aria-label="Not in a folder" className="mb-4 rounded-2xl border border-line bg-surface">
               {data.folders.length > 0 && <h2 className="border-b border-line px-4 py-3 text-sm font-bold text-muted">Not in a folder</h2>}
-              <RoutineRows routines={data.routines} onMore={(r) => setTarget({ kind: "routine", routine: r })} />
+              <RoutineRows routines={data.routines} onStart={onStart} busy={starter.busy} onMore={(r) => setTarget({ kind: "routine", routine: r })} />
             </section>
           )}
           <Button className="w-full" onClick={() => setTarget({ kind: "new-folder" })}>
@@ -106,7 +121,9 @@ function summary(r: RoutineSummary): string {
   return `${shown}${more > 0 ? `, and ${more} more` : ""}`;
 }
 
-function RoutineRows({ routines, onMore }: { routines: RoutineSummary[]; onMore: (r: RoutineSummary) => void }) {
+function RoutineRows({ routines, onMore, onStart, busy }: {
+  routines: RoutineSummary[]; onMore: (r: RoutineSummary) => void; onStart: ((id: string) => void) | null; busy: boolean;
+}) {
   if (routines.length === 0) return <p className="px-4 py-3 text-sm text-muted">No routines in this folder.</p>;
   return (
     <ul className="divide-y divide-line">
@@ -120,6 +137,12 @@ function RoutineRows({ routines, onMore }: { routines: RoutineSummary[]; onMore:
             <span className="block text-sm text-muted">{summary(r)}</span>
             <span className="block text-sm text-muted">{plural(r.set_count, "set")}</span>
           </Link>
+          {onStart && !r.archived && (
+            <button type="button" disabled={busy} onClick={() => onStart(r.id)}
+              className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl bg-accent-strong px-3 font-bold text-white disabled:opacity-50">
+              <Play size={16} aria-hidden /> Start<span className="sr-only"> {r.name}</span>
+            </button>
+          )}
           <MoreButton label={`Options for ${r.name}`} onClick={() => onMore(r)} />
         </li>
       ))}

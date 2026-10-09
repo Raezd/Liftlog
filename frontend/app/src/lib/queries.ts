@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { get } from "./api";
+import { cached } from "./offline";
 import type { Me, Muscle } from "./types";
 
-export const useMe = () => useQuery({ queryKey: ["me"], queryFn: () => get<Me>("/api/me") });
+export const useMe = () => useQuery({ queryKey: ["me"], queryFn: cached(() => get<Me>("/api/me"), (c) => c.me) });
 
 export const useMuscles = () =>
   useQuery({ queryKey: ["muscles"], queryFn: () => get<Muscle[]>("/api/muscles"), staleTime: Infinity });
