@@ -18,9 +18,9 @@ Current state of the project, how to run it, and what comes next. Rules for work
   - Every container is under its memory limit.
   - Kuma is green.
 - **Separate from Foodlog:** own Compose project, database, Tailscale node, networks, backups, and off-site job. Nothing here depends on `~/foodlog`.
-- **Backend:** FastAPI with the two-layer auth as middleware on every route (`app/auth.py`). Routes: `GET /api/health` (`{"status", "database"}`, 503 when the database doesn't answer) and `GET /api/me` (`{"login"}`). Alembic has one empty baseline, `0001`. No tables yet.
+- **Backend:** FastAPI with the two-layer auth as middleware on every route (`app/auth.py`). Routes: `GET /api/health` (`{"status", "database"}`, 503 when the database doesn't answer) and `GET /api/me` (`{"login"}`). Spec 3 added the data model and its routes (section 6).
 - **Frontend:** Vite, React 19, TypeScript, Tailwind. One hello page showing the app name, your login, backend and database health, and the build version. Earth palette in light and dark, self-hosted fonts.
-- **Tests:** the auth rules only (`backend/tests/test_auth.py`): missing header, wrong header, and an unlisted login get 403; an allowed login gets 200.
+- **Tests:** `scripts/test-backend.sh` (throwaway Postgres). Auth rules (`test_auth.py`): missing header, wrong header, and an unlisted login get 403; an allowed login gets 200. Spec 3's data rules are in `test_rules.py` and `test_data.py`.
 - **Networks:** `edge` (Tailscale only, has internet), `app` (internal: Caddy to backend), `db` (internal: backend to Postgres). The backend and database have no route to the internet. No host ports.
 - **Memory limits:** db 256 MB, backend 256 MB, web 64 MB, tailscale 128 MB. Postgres: `shared_buffers=64MB`, `max_connections=20`.
 
@@ -49,12 +49,10 @@ scripts/                 backup.sh + liftlog-backup.service/.timer (local dump)
 
 ```bash
 cd ~/liftlog
-BUILD_ID=$(git rev-parse --short HEAD) docker compose up -d --build
-docker compose ps                                  # backend "healthy"
-docker stats --no-stream $(docker compose ps -q)   # each under its limit
+scripts/deploy.sh
 ```
 
-Migrations run on backend start. Once there's real data, take a dump first (`scripts/backup.sh`, see below).
+It refuses a dirty tree or an unmounted `/mnt/storage`, builds, takes a pg_dump (checked with `pg_restore --list`) to `/mnt/storage/backups/liftlog/predeploy/` (newest 10 kept), then starts the new containers. Migrations run when the backend starts, so the dump always comes first. It ends with `docker compose ps`, the Alembic revision, and `docker stats`.
 
 **First-time setup (done once):**
 
@@ -180,16 +178,53 @@ Trav ran all of them on both phones and reported that everything passed, both sc
 | Keystore and password in latest restic snapshot | pass (`03eb37ba`) | |
 | CORS test passes | pass (13 backend tests) | |
 
-**Scheduling path chosen: A** (`@capacitor/local-notifications` with `allowWhileIdle`). It passed every test, including force-idle, so per the rule A is used. B (`setAlarmClock`) also passed and stays in the code as the fallback if A ever turns out late on a phone or Android update. The workout screen (Spec 5) schedules with A.
+**Scheduling path chosen: A** (`@capacitor/local-notifications` with `allowWhileIdle`). It passed every test, including force-idle, so per the rule A is used. B (`setAlarmClock`) also passed; its code was removed in Spec 3 (it's in git history before `688e3de` if A ever turns out late on a phone or Android update). The workout screen (Spec 5) schedules with A.
 
-**Ringer default for v1: follow the ringer** (`rest-timer-v1`: sound and vibration normally, vibration only on vibrate or silent). The alarm sound channel (`rest-timer-alarm-v1`) stays available; a per-user setting for it would be a scope question for later.
+**Ringer default for v1: follow the ringer** (`rest-timer-v1`: sound and vibration normally, vibration only on vibrate or silent). Spec 3 added the per-user setting **Play through silent mode** (off by default), which switches to `rest-timer-alarm-v1`. The phone keeps the last value it saw so the timer works with no signal.
 
 ### The rest of v1
 
-The remaining order: 3 data model, exercise library, and Hevy import; 4 routines; 5 workout card flow, offline storage and sync, plate math, finish and export; 6 history, PRs, charts, body-part volume; 7 measurements and the Foodlog summary API.
+The remaining order: 3 data model, exercise library, and Hevy import (done, section 6); 4 routines; 5 workout card flow, offline storage and sync, plate math, finish and export; 6 history, PRs, charts, body-part volume; 7 measurements and the Foodlog summary API.
 
-## 6. Known gaps
+## 6. Spec 3: data model, exercise library, Hevy import
+
+**Status:** built, tested, and deployed as `688e3de` on October 9, 2026. Android app `10-688e3de` published to /download. Waiting on Trav's import and phone checks (table below).
+
+### What exists
+
+- **Schema** (migrations `0002` to `0004`; overview in `CLAUDE.md`, Data model): read-only exercise catalog (876 from free-exercise-db, commit `f00c92c`, Unlicense, in `backend/app/seed/free-exercise-db/`), muscle vocabulary (19: the dataset's groups with shoulders split into front, side, rear delts), users, user exercises, muscle-map change log, workouts, workout exercises, sets, workout change log, imports, Hevy title mappings. UUIDv7 keys; client ids accepted.
+- **User scoping:** users are created on their first request from the Tailscale login. Every query filters on the caller; another user's object is a 404.
+- **Routes:** `GET/PATCH /api/me` (login and settings), `GET /api/muscles`, `GET /api/catalog?q=`, `GET /api/catalog/{id}`, `GET/POST /api/exercises`, `GET/PATCH /api/exercises/{id}`, `GET /api/workouts?before=`, `GET /api/workouts/{id}`, `POST /api/imports/hevy/preview`, `POST /api/imports/hevy`, `GET /api/imports`, `GET /api/imports/{id}`.
+- **Pages** (web and Android, bottom nav): History (newest first, imported label, tap for exercises and sets), Library (search, Needs review and Archived filters, add from catalog or custom, edit name, equipment, logging type, muscles, archive, muscle change history), Import (upload, counts, per-title review, delt confirmation, result), Settings (display name, timezone, units, play through silent mode, login and version). The hello page is gone; the timer test screen is under Settings in the app.
+- **Hevy import** (flow in `CLAUDE.md`): columns verified against Trav's real export. Strong matches (score 1.1 or more) start out picked on the review screen; everything else needs a choice. Delts chosen on the review screen are applied; the exercise keeps Needs review unless "These delts are right" is ticked.
+- **Deploy** now goes through `scripts/deploy.sh` (dump first). The first one wrote `predeploy/liftlog-20261009-211022-before-688e3de.dump` before `0002` to `0004` ran.
+- **Memory after deploy:** backend 64 MiB, db 21 MiB, tailscale 30 MiB, web 13 MiB.
+
+### Dry run on Trav's export
+
+`~/imports/hevy-trav.csv` (1,025 rows) through the real code against a scratch database, picking the top match for every title: **72 workouts and 1,025 sets added**, matching the file's 72 distinct workouts and 1,025 rows. Re-importing added 0 and skipped 72 workouts (1,025 sets), and asked no questions. The scratch database was deleted; nothing was imported into the live one. Trav runs the real import through the page so the exercise choices are his.
+
+Notes from the file: 31 exercise titles, weights in lb, distances in miles, no RPE, one superset (Jul 25, 2026: Lat Pulldown and Seated Row), Treadmill done twice in four workouts (kept as two entries), one workout description ("Deload week", Aug 18). Titles with no good catalog match: Champagnes, Stretching, Hip Openers, Ruck walk, Medicine Ball Catch, Knee-to-wall Ankle Dorsiflexion; custom is likely right for those.
+
+### Acceptance
+
+| Check | Result |
+|---|---|
+| Trav's export imports; counts match the CSV (72 workouts, 1,025 sets) | dry run passes; real import pending (Trav) |
+| Spot-check oldest (Nov 16, 2025, Day 4: Deadlift), superset (Jul 25, 2026), newest (Oct 7, 2026) against Hevy | pending (Trav) |
+| Re-import adds 0 and reports all skipped | test passes; dry run passes |
+| Every title resolved; second import asks nothing | test passes; dry run passes |
+| Shoulder exercises arrive with Needs review; confirming clears it | test passes; pending on the page (Trav) |
+| Tests pass | 39 pass |
+| Library, history, settings on desktop and both phones; wife sees none of Trav's data | isolation test passes; phones pending (install `10-688e3de`) |
+| pg_dump before the migration; stack under memory limits | done (see above) |
+
+## 7. Known gaps
 
 - The timer test screen is temporary and is removed when the workout screen is built (Spec 5).
 - The app uses Capacitor's default launcher icon and splash.
-- `localStorage` holds the timer test state only. Real on-device storage (IndexedDB) and sync are Spec 5.
+- `localStorage` holds the timer test state and the last-seen play through silent setting. Real on-device storage (IndexedDB) and sync are Spec 5.
+- No trigger stops a finished workout from being updated in place; the rule holds because no endpoint edits workouts. Spec 5's edit flow writes `workout_changes`.
+- Muscle arrays are checked against the vocabulary in the API, not by a foreign key.
+- Adding a catalog exercise you already have returns your copy; delt choices on the import screen don't change an existing copy.
+- Re-importing a file with nothing new still writes an import record (all skipped), which is how the skip counts are reported.
