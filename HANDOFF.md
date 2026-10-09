@@ -120,7 +120,7 @@ restic restore latest --tag liftlog --target / --include /home/YOUR_USER/liftlog
 
 ## 5. Spec 2: Android app and rest timer prototype
 
-**Status:** built, deployed, and published (`6-52e57ce`, October 9, 2026). Phone acceptance tests are **not run yet**, so the scheduling path is undecided (see the results table).
+**Status:** accepted October 9, 2026. Built, deployed, and published as `6-52e57ce`; Trav reported every phone acceptance test passing on both phones. **Path A chosen; default alert follows the ringer.**
 
 ### What exists
 
@@ -163,22 +163,26 @@ scripts/android-publish.sh    # newest build to /download
 
 ### Acceptance tests (both phones, airplane mode, stopwatch, pass = within 2 s)
 
+Trav ran all of them on both phones and reported that everything passed, both scheduling paths included. Per-test stopwatch times weren't recorded.
+
 | Test | Trav | Wife |
 |---|---|---|
-| Installs from /download, opens in airplane mode | | |
-| Shows own login with network and Tailscale on; desktop web still works | | |
-| 90 s timer, screen locked | | |
-| Five-timer sequence, locked in a pocket | | |
-| `adb shell dumpsys deviceidle force-idle`, three 60 s timers, **path A** | | |
-| Same, **path B** | | |
-| Fires after the app is swiped from recents | | |
-| Cancelled early never fires | | |
-| Audible in Bluetooth earbuds over music | | |
-| On vibrate: default vibrates only; alarm toggle plays sound | | |
-| Keystore and password in latest restic snapshot | `03eb37ba` | |
+| Installs from /download, opens in airplane mode | pass | pass |
+| Shows own login with network and Tailscale on; desktop web still works | pass | pass |
+| 90 s timer, screen locked | pass | pass |
+| Five-timer sequence, locked in a pocket | pass | pass |
+| `adb shell dumpsys deviceidle force-idle`, three 60 s timers, **path A** | pass | pass |
+| Same, **path B** | pass | pass |
+| Fires after the app is swiped from recents | pass | pass |
+| Cancelled early never fires | pass | pass |
+| Audible in Bluetooth earbuds over music | pass | pass |
+| On vibrate: default vibrates only; alarm toggle plays sound | pass | pass |
+| Keystore and password in latest restic snapshot | pass (`03eb37ba`) | |
 | CORS test passes | pass (13 backend tests) | |
 
-**Scheduling path chosen:** not yet decided. Rule: if A passes every test, use A; if only B passes, use B. **Ringer default for v1:** to be decided from the vibrate test.
+**Scheduling path chosen: A** (`@capacitor/local-notifications` with `allowWhileIdle`). It passed every test, including force-idle, so per the rule A is used. B (`setAlarmClock`) also passed and stays in the code as the fallback if A ever turns out late on a phone or Android update. The workout screen (Spec 5) schedules with A.
+
+**Ringer default for v1: follow the ringer** (`rest-timer-v1`: sound and vibration normally, vibration only on vibrate or silent). The alarm sound channel (`rest-timer-alarm-v1`) stays available; a per-user setting for it would be a scope question for later.
 
 ### The rest of v1
 
@@ -186,6 +190,6 @@ The remaining order: 3 data model, exercise library, and Hevy import; 4 routines
 
 ## 6. Known gaps
 
-- Spec 2 phone acceptance tests and the path A/B decision (section 5).
+- The timer test screen is temporary and is removed when the workout screen is built (Spec 5).
 - The app uses Capacitor's default launcher icon and splash.
 - `localStorage` holds the timer test state only. Real on-device storage (IndexedDB) and sync are Spec 5.
