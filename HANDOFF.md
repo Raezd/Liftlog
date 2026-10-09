@@ -125,7 +125,7 @@ restic restore latest --tag liftlog --target / --include /home/YOUR_USER/liftlog
 - **App:** Capacitor 8.5.2 Android project in `frontend/app/android`, app id `io.github.raezd.liftlog` (permanent: changing it means uninstalling). Plugins pinned exactly: `@capacitor/core`, `@capacitor/android`, `@capacitor/cli` 8.5.2, `@capacitor/local-notifications` 8.3.1. No iOS project. minSdk 26, target 36.
 - **Offline:** web files are bundled in the APK, never loaded from the server. The API base (`https://liftlog.tail9d27a0.ts.net`) is set at build time from the stack's own Tailscale name (`VITE_API_BASE`). The web build uses relative paths.
 - **CORS:** only `https://localhost` (the app's origin) gets CORS headers (`backend/app/main.py`). The desktop web build is same-origin. Auth wraps CORS, so preflights must pass both auth layers too. A disallowed preflight gets a bare 400 with no CORS headers. Tests are in `backend/tests/test_auth.py`.
-- **Timer test screen** (`src/timer/`, temporary, removed when the workout screen is built): 10/60/90/180 s timers, five 2:30 rests 30 s apart, Done resting, Cancel, path A/B switch, alarm sound toggle, server status and login, permission help, and a results list showing how late each alert was posted.
+- **Timer test screen** (removed in Spec 5a; in git history before `3a3e271`): 10/60/90/180 s timers, five 2:30 rests 30 s apart, Done resting, Cancel, path A/B switch, alarm sound toggle, server status and login, permission help, and a results list showing how late each alert was posted.
 - **Path A:** `@capacitor/local-notifications` with `allowWhileIdle` (`setExactAndAllowWhileIdle`). **Path B:** the app's own `RestAlarm` plugin (`RestAlarmPlugin.java`) using `AlarmManager.setAlarmClock`.
 - **Channels** (`RestAlerts.java`): `rest-timer-v1` (notification usage, follows the ringer) and `rest-timer-alarm-v1` (alarm usage, rings on vibrate or silent). Both high importance, vibration `0,700,250,700,250,700`, sound `res/raw/rest_alert.wav` (original, see `docs/rest-alert-sound.md`). A channel's sound can't change after creation: a new sound means `-v2` ids.
 - **Timer state** is absolute end times in `localStorage`. While the app is open it takes an alert over 600 ms before it's due (only if the native side says the app is in front), cancels the scheduled one, and plays the same sound and vibration in-app, so there's no duplicate notification. If the app leaves the front before the end, the alert is handed back to the phone.
@@ -184,7 +184,7 @@ Trav ran all of them on both phones and reported that everything passed, both sc
 
 ### The rest of v1
 
-The remaining order: 3 data model, exercise library, and Hevy import (done, section 6); 4 routines (done, section 7); 5 workout card flow, offline storage and sync, plate math, finish and export; 6 history, PRs, charts, body-part volume; 7 measurements and the Foodlog summary API.
+The remaining order: 3 data model, exercise library, and Hevy import (done, section 6); 4 routines (done, section 7); 5a workout card flow, offline storage and sync, finish (built, section 9); 5b plate math and export; 6 history, PRs, charts, body-part volume, editing finished workouts; 7 measurements and the Foodlog summary API.
 
 ## 6. Spec 3: data model, exercise library, Hevy import
 
@@ -277,15 +277,76 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 | Web and APK report the same commit; both phones on the new APK | both `266ac73`; phones pending |
 | Tests pass; dump before migration; memory under limits | 46 backend, 11 frontend; done |
 
-## 9. Known gaps
+## 9. Spec 5a: live workouts offline, sync, immutable history
 
-- The timer test screen is temporary and is removed when the workout screen is built (Spec 5).
-- Routine editing needs a connection. Viewing and starting routines offline is Spec 5; offline editing comes after v1 (the conflict check and client ids are ready for it).
+**Status:** built, tested, and committed (`b305534` backend, `3a3e271` frontend, plus this HANDOFF commit). **Not deployed yet:** the deploy was blocked by Claude Code's permission check in this session, so Trav runs it (below). A test APK `19-3a3e271` was built to check the Java change compiles; it was not published.
+
+### Deploy and publish (Trav)
+
+```bash
+cd ~/liftlog
+scripts/deploy.sh             # dump first, then 0007 runs on backend start
+scripts/android-build.sh      # from the same commit, so web and APK match
+scripts/android-publish.sh
+```
+
+Then install the new APK on both phones from /download. After the deploy, check that the dump file name in `predeploy/` says `before-<hash>` and that `alembic current` prints `0007`.
+
+### What exists
+
+- **Backend.** `PUT /api/workouts/{id}` (the upload; contract in `CLAUDE.md`, Offline model and sync), `GET /api/offline` (everything the phone caches), and `GET /api/workouts/{id}` now also returns `routine_version_id`, `routine_id`, each exercise's `rest_seconds`, and each set's `completed_at`.
+- **Migration `0007`.** `workout_exercises.rest_seconds`, `workouts.upload_hash`, the immutability triggers on `workouts`, `workout_exercises`, and `sets`, `workout_snapshot()`, and `edit_finished_workout()` (writes `workout_changes`; nothing calls it until Spec 6). Rules in `CLAUDE.md`. Downgrades and upgrades cleanly (checked once against the test database, with data in it).
+- **Phone storage.** IndexedDB `liftlog` v1: `cache`, `active`, `queue`. The copy refreshes on start, resume, reconnect, and after uploads. The login check refuses to clear while the cached login has unsynced workouts and says so on every page.
+- **Routines** (`/`, `/routines/{id}`): read from the copy when the server can't be reached. In the app: **Start empty workout** at the top, **Start** on each routine row and on the routine page. A bar on every page resumes a workout in progress; reopening the app goes straight back to it.
+- **Workout** (`/workout`, full screen, app only): one card per exercise or superset, Previous and Next exercise, elapsed time. Each set: type (tap the set number: normal, warm-up, drop, failure, or remove), weight, reps, time, or distance by logging type, RPE (tap to show 6 to 10), done. Rep ranges show as "Target 8 to 12 reps". The last-session strip shows last time's sets, top set, and volume. Rest control on the card (plus and minus 15 s, this workout only); a rest bar with the countdown, its own plus and minus 15 s, and Skip. **Overview:** jump, remove (asks if it has done sets), superset with the next exercise (up to three), add from the library, reorder (the routine editor's drag and buttons), discard.
+- **Finish** (`/workout/finish`): title and notes, how many sets and exercises will be dropped, Save, Back, Discard. **Summary** (`/workout/done`): time, sets, volume, confetti (none with reduced motion), and whether it uploaded.
+- **Unsynced indicator:** "N workouts waiting to upload" with Retry, above every page; the server's reason shows when it refused one.
+- **Routine editor fix:** removing the middle of a three-exercise superset keeps the other two grouped.
+- **Removed:** the timer test screen, its route, `useRestTimer.ts`, and the native `delivered()` method only it used.
+- **Tests:** 56 backend (new `tests/test_workouts.py`: upload idempotency, 409 and 404, workout date at upload with the 4 AM rule and DST, the triggers on update, delete, and insert, the change log function, Hevy re-import with the triggers on, version kept for a synced workout while unused ones are pruned, the offline copy is private; `test_routines.py` now links workouts through a real upload) and 18 frontend (new `volume.test.ts`, `offline.test.ts`, and a superset removal test in `reorder.test.ts`).
+
+### Choices made while building (not in the spec)
+
+- Each workout exercise stores the rest it used (`rest_seconds`), which is what "the rest time from that exercise's most recent workout" reads. For a superset it's on the first exercise and is the rest after each round.
+- A superset rests once every exercise in it has done that round's set (so it works in any order, and with uneven set counts).
+- The rest bar's plus and minus change only the running rest; the card's change the exercise's rest for the rest of the workout (and the running rest, if it's that exercise's).
+- An exercise added during a workout gets as many sets as last time, prefilled from it, or one empty set.
+- Workout exercises keep the routine's notes for that exercise, so save as routine still carries them.
+- Finish is disabled until at least one set is done; discard is offered instead.
+- Starting from a routine uses the server's current version if it answers within 6 seconds, else the copy.
+- A finished workout whose routine version was pruned while it was offline (the routine was edited on desktop meanwhile) uploads with no version link rather than failing forever.
+- Upload response codes beyond the spec: a taken exercise or set id is 409 `id_taken`; bad values are 422.
+
+### Acceptance
+
+Nothing below has been run on a phone or in a browser this session (no device or browser tools). Every item marked pending needs the deploy and the new APK first.
+
+| Check | Result |
+|---|---|
+| Real workout from a routine, airplane mode, phone locked between sets; alerts on time; appears once in History on desktop with the right date and version | pending (Trav) |
+| Prefill in airplane mode matches the last session of the same routine | rule unit-tested; pending on phone |
+| Force-stop mid-workout, reopen: resumes with every completed set | pending (Trav) |
+| Superset: alert only after the last exercise of each round | pending (Trav) |
+| Empty workout started offline syncs when back online | pending (Trav) |
+| Two workouts finished offline both upload once; Retry again adds no duplicates | idempotency tested; pending on phone |
+| A discarded workout never reaches the server | pending (Trav) |
+| Wife's phone shows only her data | upload and offline copy isolation tested; pending on her phone |
+| Timer test screen is gone | done in code; pending in the new APK |
+| A hand-run UPDATE on a finished set in psql is rejected | tested; pending on live (`docker compose exec db psql -U liftlog -c "UPDATE sets SET reps = reps"` should fail with "finished workouts are immutable") |
+| Tests pass; dump before migration; memory under limits | 56 backend, 18 frontend, build passes; deploy pending |
+
+## 10. Known gaps
+
+- Routine editing needs a connection. Offline editing comes after v1 (the conflict check and client ids are ready for it).
+- History and the workout view are online only. A workout waiting to upload shows in the unsynced count, not in History, until it uploads.
+- A workout the server refuses with 409 (same id, different content) stays queued with the reason shown, and there's no button to drop it. It shouldn't happen: ids are made on the phone and the content never changes after finish.
+- A workout started from a version that gets pruned before the workout uploads (the routine edited on another device meanwhile) is stored without its version link, so prefill won't treat it as the same routine.
+- The triggers' escape hatch is a transaction-local setting, so someone with direct database access can still set it by hand. The rule they enforce is against accidents and app bugs, not the database owner.
+- Deleting a user who has finished workouts is refused by the triggers (no flow deletes users).
 - Reordering while archived routines are hidden leaves their positions alone, so a restored one can land between others.
 - Weight targets keep the unit they were entered in. Changing your weight unit in Settings doesn't convert existing targets.
 - The app uses Capacitor's default launcher icon and splash.
-- `localStorage` holds the timer test state and the last-seen play through silent setting. Real on-device storage (IndexedDB) and sync are Spec 5.
-- No trigger stops a finished workout from being updated in place; the rule holds because no endpoint edits workouts. Spec 5's edit flow writes `workout_changes`.
+- `localStorage` still holds the last-seen play through silent setting (`timer/alertSetting.ts`); everything else on the phone is in IndexedDB.
 - Muscle arrays are checked against the vocabulary in the API, not by a foreign key.
 - Adding a catalog exercise you already have returns your copy; delt choices on the import screen don't change an existing copy.
 - Re-importing a file with nothing new still writes an import record (all skipped), which is how the skip counts are reported.
