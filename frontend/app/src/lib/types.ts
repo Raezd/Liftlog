@@ -122,3 +122,67 @@ export type ImportResult = {
   skipped: Counts;
   conflicting: Counts;
 };
+
+export type RoutineSetT = {
+  id: string;
+  position: number;
+  set_type: SetType;
+  reps_min: number | null;
+  reps_max: number | null;
+  weight_value: string | null;
+  weight_unit: WeightUnit | null;
+  rpe: string | null;
+  duration_seconds: number | null;
+  distance_value: string | null;
+  distance_unit: DistanceUnit | "m" | null;
+};
+
+export type RoutineVersion = {
+  id: string;
+  routine_id: string;
+  number: number;
+  parent_version_id: string | null;
+  created_at: string;
+  /** Superset group -> rest seconds after each round. */
+  superset_rests: Record<string, number>;
+  exercises: {
+    id: string;
+    exercise_id: string;
+    name: string;
+    logging_type: LoggingType;
+    equipment: Equipment;
+    position: number;
+    superset_group: number | null;
+    notes: string;
+    rest_seconds: number | null;
+    sets: RoutineSetT[];
+  }[];
+};
+
+export type RoutineDetail = {
+  id: string;
+  name: string;
+  folder_id: string | null;
+  position: number;
+  archived: boolean;
+  used: boolean;
+  current_version: RoutineVersion;
+};
+
+export type RoutineSummary = {
+  id: string;
+  name: string;
+  folder_id: string | null;
+  position: number;
+  archived: boolean;
+  used: boolean;
+  current_version_id: string;
+  exercise_names: string[];
+  set_count: number;
+};
+
+export type Folder = { id: string; name: string; position: number; archived: boolean; used: boolean; routines: RoutineSummary[] };
+
+export type RoutineList = { folders: Folder[]; routines: RoutineSummary[] };
+
+export type VersionSummary = { id: string; number: number; created_at: string; current: boolean };

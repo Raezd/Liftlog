@@ -24,7 +24,7 @@ export default function History() {
       {q.isSuccess && workouts.length === 0 && (
         <div className="rounded-2xl border border-line bg-surface p-4">
           <p>No workouts yet.</p>
-          <Link to="/import" className={`${btn.primary} mt-3`}>Import from Hevy</Link>
+          <Link to="/settings/import" className={`${btn.primary} mt-3`}>Import from Hevy</Link>
         </div>
       )}
       {workouts.length > 0 && (

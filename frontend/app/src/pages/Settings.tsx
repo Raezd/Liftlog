@@ -78,7 +78,12 @@ export default function Settings() {
         </form>
       )}
 
-      <Card title="About" className="mt-6">
+      <Card title="Import" className="mt-6">
+        <p className="mb-3 text-sm text-muted">Bring in your workout history from a Hevy export.</p>
+        <Link to="/settings/import" className={`${btn.secondary} w-full`}>Import from Hevy</Link>
+      </Card>
+
+      <Card title="About">
         <dl className="text-sm">
           <div className="flex justify-between gap-3 py-1"><dt className="text-muted">Signed in as</dt><dd className="break-all font-bold">{me.data?.login ?? "..."}</dd></div>
           <div className="flex justify-between gap-3 py-1"><dt className="text-muted">Version</dt><dd className="font-bold">{__BUILD_ID__}</dd></div>

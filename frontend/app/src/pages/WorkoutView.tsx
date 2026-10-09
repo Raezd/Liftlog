@@ -1,10 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
-import { Badge, ErrorText, Loading, Page } from "../components/ui";
-import { get } from "../lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ListPlus } from "lucide-react";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Sheet } from "../components/Sheet";
+import { Badge, Button, ErrorText, Loading, Page, SelectField, TextField } from "../components/ui";
+import { get, send } from "../lib/api";
+import { uuid7 } from "../lib/ids";
 import { SET_TYPE, SET_TYPE_SHORT, clockTime, duration, longDate, minutes } from "../lib/format";
 import { useMe } from "../lib/queries";
-import type { WorkoutDetail, WorkoutSet } from "../lib/types";
+import type { RoutineDetail, WorkoutDetail, WorkoutSet } from "../lib/types";
+import { useRoutineList } from "./Routines";
 
 function setText(s: WorkoutSet): string {
   const parts: string[] = [];
@@ -24,9 +29,10 @@ export default function WorkoutView() {
   const q = useQuery({ queryKey: ["workout", id], queryFn: () => get<WorkoutDetail>(`/api/workouts/${id}`) });
   const w = q.data;
   const tz = me.data?.timezone;
+  const [saving, setSaving] = useState(false);
 
   return (
-    <Page title={w?.title ?? "Workout"} back="/">
+    <Page title={w?.title ?? "Workout"} back="/history">
       {q.isPending && <Loading />}
       <ErrorText error={q.error} />
       {w && (
@@ -68,8 +74,54 @@ export default function WorkoutView() {
             ))}
           </ol>
           <p className="mt-4 text-sm text-muted">W is a warm-up, D a drop set, F a set to failure.</p>
+          <Button className="mt-4 w-full" onClick={() => setSaving(true)}><ListPlus size={20} aria-hidden /> Save as routine</Button>
+          <Sheet open={saving} title="Save as routine" onClose={() => setSaving(false)}>
+            {saving && <SaveAsRoutine workout={w} />}
+          </Sheet>
         </>
       )}
     </Page>
+  );
+}
+
+const NEW = "new";
+
+/** A new routine from this workout: its exercises, order, supersets, notes,
+ *  set types, and each set's weight and reps as targets. RPE isn't copied. */
+function SaveAsRoutine({ workout }: { workout: WorkoutDetail }) {
+  const folders = useRoutineList(false);
+  const [name, setName] = useState(workout.title);
+  const [folder, setFolder] = useState("");
+  const [newFolder, setNewFolder] = useState("");
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const save = useMutation({
+    mutationFn: () => send<RoutineDetail>("POST", "/api/routines/from-workout", {
+      id: uuid7(), workout_id: workout.id, name,
+      folder_id: folder && folder !== NEW ? folder : null,
+      new_folder_name: folder === NEW ? newFolder : null,
+    }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["routines"] });
+      qc.setQueryData(["routine", r.id], r);
+      navigate(`/routines/${r.id}`);
+    },
+  });
+  const options: [string, string][] = [["", "No folder"], ...(folders.data?.folders ?? []).map((f): [string, string] => [f.id, f.name]), [NEW, "New folder..."]];
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+      <p className="mb-3 text-sm text-muted">Each set's weight and reps become the targets. You can edit them after.</p>
+      <TextField label="Routine name" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
+      <SelectField label="Folder" value={folder} options={options} onChange={(e) => setFolder(e.target.value)} />
+      {folder === NEW && (
+        <TextField label="New folder name" required maxLength={120} value={newFolder} placeholder="Upper/Lower"
+          onChange={(e) => setNewFolder(e.target.value)} />
+      )}
+      <ErrorText error={save.error ?? folders.error} />
+      <Button variant="primary" type="submit" className="w-full"
+        disabled={save.isPending || !name.trim() || (folder === NEW && !newFolder.trim())}>
+        {save.isPending ? "Saving..." : "Save routine"}
+      </Button>
+    </form>
   );
 }

@@ -10,6 +10,9 @@ import ExerciseEdit from "./pages/ExerciseEdit";
 import History from "./pages/History";
 import Import from "./pages/Import";
 import Library from "./pages/Library";
+import RoutineEdit from "./pages/RoutineEdit";
+import Routines from "./pages/Routines";
+import { RoutineVersionPage, RoutineVersions } from "./pages/RoutineVersions";
 import Settings from "./pages/Settings";
 import WorkoutView from "./pages/WorkoutView";
 import { TimerTest } from "./timer/TimerTest";
@@ -32,15 +35,20 @@ const router = createBrowserRouter([
   {
     element: <AppShell />,
     children: [
-      { path: "/", element: <History /> },
+      { path: "/", element: <Routines /> },
+      { path: "/routines/new", element: <RoutineEdit /> },
+      { path: "/routines/:id", element: <RoutineEdit /> },
+      { path: "/routines/:id/versions", element: <RoutineVersions /> },
+      { path: "/routines/:id/versions/:vid", element: <RoutineVersionPage /> },
+      { path: "/history", element: <History /> },
       { path: "/workouts/:id", element: <WorkoutView /> },
       { path: "/library", element: <Library /> },
       { path: "/library/add", element: <ExerciseAdd /> },
       { path: "/library/:id", element: <ExerciseEdit /> },
-      { path: "/import", element: <Import /> },
+      { path: "/settings/import", element: <Import /> },
       { path: "/settings", element: <Settings /> },
       { path: "/timer-test", element: <TimerTest /> },
-      { path: "*", element: <History /> },
+      { path: "*", element: <Routines /> },
     ],
   },
 ]);

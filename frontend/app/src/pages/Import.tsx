@@ -98,7 +98,7 @@ export default function Import() {
   if (commit.data) {
     const r = commit.data;
     return (
-      <Page title="Import">
+      <Page title="Import" back="/settings">
         <Card title="Done">
           <dl><CountRow label="Added" c={r.added} />
             <CountRow label="Already here, skipped" c={r.skipped} />
@@ -106,7 +106,7 @@ export default function Import() {
         </Card>
         {r.conflicting.workouts > 0 && p && <Conflicts p={p} />}
         <div className="grid grid-cols-2 gap-2">
-          <Link to="/" className={btn.primary}>See history</Link>
+          <Link to="/history" className={btn.primary}>See history</Link>
           <Button onClick={reset}>Import another</Button>
         </div>
       </Page>
@@ -114,7 +114,7 @@ export default function Import() {
   }
 
   return (
-    <Page title="Import">
+    <Page title="Import" back="/settings">
       {!p && (
         <>
           <p className="mb-4">
