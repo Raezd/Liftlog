@@ -221,7 +221,7 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 
 ## 7. Spec 4: routines
 
-**Status:** built, tested, and deployed as `ef095a4` on October 9, 2026. Waiting on Trav's checks on the page and phones (table below). No new Android build was published; run `scripts/android-build.sh` and `scripts/android-publish.sh` so the phones get the new pages.
+**Status:** built, tested, and deployed as `ef095a4` on October 9, 2026. Waiting on Trav's checks on the page and phones (table below). Android app `14-c478968` published to /download.
 
 ### What exists
 
@@ -251,7 +251,7 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 |---|---|
 | Trav saves his latest Day 1 to Day 4 workouts as routines in one folder, then edits one to use rep ranges and a different target on one set | pending (Trav) |
 | Editing makes a new version; the old one is still readable | test passes; on the page under Versions, pending (Trav) |
-| Editor works on desktop and both phones, reordering by drag and by buttons | pending (Trav). Not checked in a browser this session (no browser tools), and the phones need a new APK |
+| Editor works on desktop and both phones, reordering by drag and by buttons | pending (Trav). Not checked in a browser this session (no browser tools). Install `14-c478968` on both phones |
 | Tests pass | 44 backend, 6 frontend, build passes |
 | Wife sees none of Trav's folders or routines and can make her own | isolation test passes; on her phone, pending |
 | Dump before migrations; memory under limits | done (see above) |
