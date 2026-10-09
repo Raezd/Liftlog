@@ -3,12 +3,14 @@ import { ArrowDown, ArrowUp, Check, History, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Sheet } from "../components/Sheet";
-import { SortableList, moved } from "../components/Sortable";
+import { ExerciseOrder } from "../components/ExerciseOrder";
+import { moved } from "../components/Sortable";
 import { Badge, Button, ErrorText, Loading, Page, SelectField, TextField, btn } from "../components/ui";
 import { ApiError, get, send } from "../lib/api";
 import { LOGGING, SET_TYPE, duration } from "../lib/format";
 import { uuid7 } from "../lib/ids";
 import { useMe } from "../lib/queries";
+import { canStep, describeExercise, describeUnit, moveUnit, stepExercise, supersetLetters, unitIndexAt, units } from "../lib/reorder";
 import type { DistanceUnit, Exercise, LoggingType, RoutineDetail, RoutineVersion, SetType, WeightUnit } from "../lib/types";
 import { useRoutineList } from "./Routines";
 
@@ -52,7 +54,6 @@ const FIELDS: Record<LoggingType, Fields> = {
   distance_duration: { reps: false, weight: null, duration: true, distance: true, rpe: false },
 };
 
-const SUPERSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const RPE_OPTIONS: [string, string][] = [["", "None"], ...["6", "6.5", "7", "7.5", "8", "8.5", "9", "9.5", "10"].map((v): [string, string] => [v, v])];
 const SET_TYPES = Object.entries(SET_TYPE) as [SetType, string][];
 
@@ -175,6 +176,7 @@ export default function RoutineEdit() {
   const [adding, setAdding] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [said, setSaid] = useState("");
 
   // Load the routine into the form, once per version.
   const loaded = routine.data;
@@ -200,7 +202,7 @@ export default function RoutineEdit() {
       setSaved(current);
       if (isNew) {
         leaving.current = true;
-        navigate(`/routines/${r.id}`, { replace: true });
+        navigate(`/routines/${r.id}/edit`, { replace: true });
       }
       else setNotice(`Saved as version ${r.current_version.number}.`);
     },
@@ -211,24 +213,28 @@ export default function RoutineEdit() {
     dirty && !leaving.current && !save.isPending && currentLocation.pathname !== nextLocation.pathname);
 
   if (!isNew && (routine.isPending || !form)) {
-    return <Page title="Routine" back="/">{routine.isPending ? <Loading /> : <ErrorText error={routine.error} />}</Page>;
+    return <Page title="Routine" back={`/routines/${id}`}>{routine.isPending ? <Loading /> : <ErrorText error={routine.error} />}</Page>;
   }
   if (!form) return null;
 
   const set = (next: Partial<Form>) => { setForm({ ...form, ...next }); setNotice(null); };
   const exs = form.exercises;
   const setEx = (i: number, next: Partial<EEx>) => set({ exercises: exs.map((e, j) => (j === i ? { ...e, ...next } : e)) });
-  // Moving an exercise takes it out of any superset, and doesn't drop it into one.
-  const moveEx = (from: number, to: number) => {
-    if (to < 0 || to >= exs.length) return;
-    const next = exs.map((e, j) => (j === from || j === from - 1 ? { ...e, linkNext: false } : e));
-    const out = moved(next, from, to);
-    if (to > 0) out[to - 1] = { ...out[to - 1], linkNext: false };
-    set({ exercises: out });
+  // Superset move rules live in lib/reorder.ts.
+  const stepEx = (i: number, dir: -1 | 1) => {
+    const next = stepExercise(exs, i, dir);
+    set({ exercises: next });
+    setSaid(describeExercise(next, exs[i].key));
+  };
+  const stepGroup = (i: number, dir: -1 | 1) => {
+    const u = unitIndexAt(exs, i);
+    const next = moveUnit(exs, u, u + dir);
+    set({ exercises: next });
+    setSaid(describeUnit(next, exs[i].key));
   };
   const ch = chains(exs);
-  const groupLetters: Record<number, string> = {};
-  ch.forEach((c) => { if (c && !(c[0] in groupLetters)) groupLetters[c[0]] = SUPERSET[Object.keys(groupLetters).length] ?? "?"; });
+  const letters = supersetLetters(exs);
+  const unitCount = units(exs).length;
 
   const onSave = () => {
     setNotice(null);
@@ -239,7 +245,7 @@ export default function RoutineEdit() {
   };
 
   return (
-    <Page title={isNew ? "New routine" : "Edit routine"} back="/"
+    <Page title={isNew ? "New routine" : "Edit routine"} back={isNew ? "/" : `/routines/${id}`}
       action={!isNew && <Link to={`/routines/${id}/versions`} className={btn.quiet}><History size={18} aria-hidden /> Versions</Link>}>
       <form onSubmit={(e) => { e.preventDefault(); onSave(); }}>
         <TextField label="Name" required maxLength={120} value={form.name} placeholder="Day 1: Squat"
@@ -263,18 +269,21 @@ export default function RoutineEdit() {
 
         {reorder ? (
           <>
-            <p className="mb-3 text-sm text-muted">Drag the handles, or use the arrows. Moving an exercise takes it out of its superset.</p>
-            <SortableList label="Exercises" items={exs} keyOf={(e) => e.key} labelOf={(e) => e.name} onMove={moveEx}>
-              {(e) => <span className="flex min-h-11 items-center px-2 font-bold">{e.name}</span>}
-            </SortableList>
+            <p className="mb-3 text-sm text-muted">
+              Drag the handles, or use the arrows. Moving an exercise past either end of its superset takes it out. Move a whole superset from its header.
+            </p>
+            <ExerciseOrder items={exs} onChange={(next) => set({ exercises: next })} />
           </>
         ) : (
           <ol className="space-y-3">
             {exs.map((e, i) => (
               <ExerciseCard key={e.key} e={e} index={i} count={exs.length} unit={unit} chain={ch[i]}
-                letter={ch[i] ? groupLetters[ch[i]![0]] : null}
+                letter={letters[i]}
+                canStepUp={canStep(exs, i, -1)} canStepDown={canStep(exs, i, 1)}
+                groupUp={unitIndexAt(exs, i) > 0} groupDown={unitIndexAt(exs, i) < unitCount - 1}
+                onStep={(dir) => stepEx(i, dir)} onStepGroup={(dir) => stepGroup(i, dir)}
                 canLink={i < exs.length - 1 && (ch[i]?.[1] ?? 1) + (ch[i + 1]?.[1] ?? 1) <= 3}
-                onChange={(next) => setEx(i, next)} onMove={(to) => moveEx(i, to)}
+                onChange={(next) => setEx(i, next)}
                 onRemove={() => set({ exercises: exs.filter((_, j) => j !== i).map((x, j) => (j === i - 1 ? { ...x, linkNext: false } : x)) })} />
             ))}
           </ol>
@@ -302,6 +311,7 @@ export default function RoutineEdit() {
         </div>
       </form>
 
+      <p className="sr-only" aria-live="polite">{said}</p>
       <AddExercises open={adding} onClose={() => setAdding(false)} added={exs.map((e) => e.exercise_id)}
         onAdd={(x) => set({
           exercises: [...exs, {
@@ -330,9 +340,11 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
   );
 }
 
-function ExerciseCard({ e, index, count, unit, chain, letter, canLink, onChange, onMove, onRemove }: {
+function ExerciseCard({ e, index, count, unit, chain, letter, canLink, canStepUp, canStepDown, groupUp, groupDown, onStep, onStepGroup, onChange, onRemove }: {
   e: EEx; index: number; count: number; unit: WeightUnit; chain: [number, number] | null; letter: string | null; canLink: boolean;
-  onChange: (next: Partial<EEx>) => void; onMove: (to: number) => void; onRemove: () => void;
+  canStepUp: boolean; canStepDown: boolean; groupUp: boolean; groupDown: boolean;
+  onStep: (dir: -1 | 1) => void; onStepGroup: (dir: -1 | 1) => void;
+  onChange: (next: Partial<EEx>) => void; onRemove: () => void;
 }) {
   const f = FIELDS[e.logging_type];
   const setSet = (k: number, next: Partial<ESet>) => onChange({ sets: e.sets.map((s, j) => (j === k ? { ...s, ...next } : s)) });
@@ -340,6 +352,13 @@ function ExerciseCard({ e, index, count, unit, chain, letter, canLink, onChange,
   const id = `ex-${e.key}`;
   return (
     <li aria-labelledby={id} className={`rounded-2xl border bg-surface p-3 ${chain ? "border-l-4 border-accent-strong border-y-line border-r-line" : "border-line"}`}>
+      {firstInChain && (
+        <div className="-mx-1 -mt-1 mb-2 flex items-center gap-1 rounded-xl bg-sunken pl-3">
+          <span className="min-w-0 flex-1 font-bold text-accent-text">Superset {letter}</span>
+          <IconButton label={`Move superset ${letter} up`} disabled={!groupUp} onClick={() => onStepGroup(-1)}><ArrowUp size={18} aria-hidden /></IconButton>
+          <IconButton label={`Move superset ${letter} down`} disabled={!groupDown} onClick={() => onStepGroup(1)}><ArrowDown size={18} aria-hidden /></IconButton>
+        </div>
+      )}
       <div className="flex items-start gap-1">
         <div className="min-w-0 flex-1 pt-2">
           <h3 id={id} className="display text-lg font-bold leading-tight">{e.name}</h3>
@@ -347,8 +366,8 @@ function ExerciseCard({ e, index, count, unit, chain, letter, canLink, onChange,
             {LOGGING[e.logging_type]}{letter && <> <Badge>Superset {letter}</Badge></>}
           </p>
         </div>
-        <IconButton label={`Move ${e.name} up`} disabled={index === 0} onClick={() => onMove(index - 1)}><ArrowUp size={18} aria-hidden /></IconButton>
-        <IconButton label={`Move ${e.name} down`} disabled={index === count - 1} onClick={() => onMove(index + 1)}><ArrowDown size={18} aria-hidden /></IconButton>
+        <IconButton label={`Move ${e.name} up`} disabled={!canStepUp} onClick={() => onStep(-1)}><ArrowUp size={18} aria-hidden /></IconButton>
+        <IconButton label={`Move ${e.name} down`} disabled={!canStepDown} onClick={() => onStep(1)}><ArrowDown size={18} aria-hidden /></IconButton>
         <IconButton label={`Remove ${e.name}`} onClick={onRemove}><Trash2 size={18} aria-hidden /></IconButton>
       </div>
 
@@ -433,7 +452,7 @@ function SmallField({ label, suffix, value, onChange, ...rest }: {
   return (
     <label className="mt-1 block">
       <span className="text-sm font-bold">{label}</span>
-      <span className="mt-1 flex items-center rounded-xl border border-line bg-ground pr-2 focus-within:ring-2 focus-within:ring-accent">
+      <span className="mt-1 flex items-center rounded-xl border border-line bg-ground pr-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-text">
         <input value={value} onChange={(e) => onChange(e.target.value)} {...rest}
           className="num block min-h-11 w-full min-w-0 rounded-xl bg-transparent px-2 outline-none" />
         {suffix && <span className="text-sm text-muted">{suffix}</span>}

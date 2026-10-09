@@ -69,7 +69,7 @@ export function Chip({ label, checked, onChange, disabled }: { label: string; ch
   return (
     <label className={`inline-flex ${disabled ? "opacity-50" : "cursor-pointer"}`}>
       <input type="checkbox" className="peer sr-only" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      <span className="inline-flex min-h-11 items-center rounded-full border border-line bg-sunken px-3 peer-checked:border-accent-strong peer-checked:bg-accent-strong peer-checked:font-bold peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-accent">
+      <span className="inline-flex min-h-11 items-center rounded-full border border-line bg-sunken px-3 peer-checked:border-accent-strong peer-checked:bg-accent-strong peer-checked:font-bold peer-checked:text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent-text">
         {label}
       </span>
     </label>
@@ -85,7 +85,7 @@ export function Segmented<T extends string>({ label, name, value, options, onCha
         {options.map(([v, l]) => (
           <label key={v} className="flex">
             <input type="radio" name={name} className="peer sr-only" checked={value === v} onChange={() => onChange(v)} />
-            <span className="flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-line bg-sunken px-3 peer-checked:border-accent-strong peer-checked:bg-accent-strong peer-checked:font-bold peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-accent">
+            <span className="flex min-h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-line bg-sunken px-3 peer-checked:border-accent-strong peer-checked:bg-accent-strong peer-checked:font-bold peer-checked:text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent-text">
               {l}
             </span>
           </label>

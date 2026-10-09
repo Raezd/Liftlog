@@ -292,15 +292,18 @@ class Routine(Base):
 
 class RoutineVersion(Base):
     """Immutable once written (a trigger rejects updates, here and on its
-    exercises and sets). Every save makes a new one."""
+    exercises and sets). Every save makes a new one and deletes the one it
+    replaced, unless a workout references it (workouts.routine_version_id,
+    ON DELETE RESTRICT)."""
     __tablename__ = "routine_versions"
     id: Mapped[uuid.UUID] = _id()
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     routine_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("routines.id", ondelete="CASCADE"), nullable=False)
     # 1, 2, 3... per routine, for display.
     number: Mapped[int] = mapped_column(Integer, nullable=False)
-    # The version this one was edited from. A save whose parent isn't current is a conflict.
-    parent_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("routine_versions.id"))
+    # The version this one was edited from. A save whose parent isn't current is a
+    # conflict. No foreign key: the parent is usually pruned once this one is saved.
+    parent_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     # Superset group (as a string) -> rest seconds after each round.
     superset_rests: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     created_at: Mapped[dt.datetime] = _created()

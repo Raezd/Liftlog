@@ -10,6 +10,7 @@ import { SET_TYPE, SET_TYPE_SHORT, clockTime, duration, longDate, minutes } from
 import { useMe } from "../lib/queries";
 import type { RoutineDetail, WorkoutDetail, WorkoutSet } from "../lib/types";
 import { useRoutineList } from "./Routines";
+import type { SavedState } from "./RoutineView";
 
 function setText(s: WorkoutSet): string {
   const parts: string[] = [];
@@ -104,7 +105,8 @@ function SaveAsRoutine({ workout }: { workout: WorkoutDetail }) {
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ["routines"] });
       qc.setQueryData(["routine", r.id], r);
-      navigate(`/routines/${r.id}`);
+      const folderName = folder === NEW ? newFolder.trim() : folders.data?.folders.find((f) => f.id === folder)?.name ?? null;
+      navigate(`/routines/${r.id}`, { state: { saved: { folder: folderName } } satisfies SavedState });
     },
   });
   const options: [string, string][] = [["", "No folder"], ...(folders.data?.folders ?? []).map((f): [string, string] => [f.id, f.name]), [NEW, "New folder..."]];

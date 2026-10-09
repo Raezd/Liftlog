@@ -1,10 +1,12 @@
 """Folders (programs) and routines (days), with immutable versions.
 
 Every save of a routine's content writes a new version and moves the
-routine's pointer to it; old versions are never changed (a trigger enforces
-it), so workouts that started from them (Spec 5) keep what they used. A save
-names the version it was edited from, and if that's no longer current the
-save is refused with 409 and nothing is written.
+routine's pointer to it; versions are never changed (a trigger enforces it),
+so workouts that started from them (Spec 5) keep what they used. A save names
+the version it was edited from, and if that's no longer current the save is
+refused with 409 and nothing is written. Otherwise, in the same transaction,
+the version it replaced is deleted unless a workout references it: only the
+current version and versions workouts used are kept.
 
 A routine or folder that no workout has used can be deleted. Once used, it can
 only be archived.
@@ -225,6 +227,17 @@ def version_out(session: Session, v: RoutineVersion) -> dict:
             } for s in e.sets],
         } for e in v.exercises],
     }
+
+
+def prune(session: Session, version_id: uuid.UUID | None) -> None:
+    """Deletes a replaced version unless a workout references it."""
+    if version_id is None:
+        return
+    session.execute(delete(RoutineVersion).where(
+        RoutineVersion.id == version_id,
+        ~exists().where(Workout.routine_version_id == RoutineVersion.id)).execution_options(
+        synchronize_session=False))
+    session.expire_all()
 
 
 def used_routines(session: Session, user: User) -> set[uuid.UUID]:
@@ -538,7 +551,9 @@ def save_version(routine_id: uuid.UUID, body: SaveIn, user: CurrentUser, session
                       status.HTTP_409_CONFLICT)
     if body.name is not None:
         r.name = check_text(body.name, "routine")
-    write_version(session, user, r, body, parent=body.parent_version_id)
+    previous = r.current_version_id
+    write_version(session, user, r, body, parent=previous)
+    prune(session, previous)
     session.commit()
     return routine_detail(session, user, r)
 

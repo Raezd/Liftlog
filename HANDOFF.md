@@ -230,7 +230,7 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 - **Pages:** the bottom nav is now Routines, History, Library, Settings. Import moved to Settings (`/settings/import`).
   - **Routines** (`/`): folders with their routines in order, "Not in a folder" below. Options per folder or routine: rename, move to another folder, duplicate, archive or restore, delete (only if no workout used it), earlier versions. Reorder mode: drag handles plus move up and move down buttons, with each move read out for screen readers. Show archived on demand.
   - **Editor** (`/routines/new`, `/routines/{id}`): add from your library (several at once), reorder by buttons on each card or in reorder mode (drag or buttons), supersets with "Superset with the next exercise" (up to three, a rest after each round), rest and notes per exercise. Per set: add (copies the last set), remove, move, set type, reps fixed or a range, and weight, RPE, time, or distance depending on the logging type. Save makes a new version; leaving with unsaved changes asks first; a conflict offers to load the latest and never overwrites.
-  - **Versions** (`/routines/{id}/versions`): every version, newest first, each readable as it was saved.
+  - **Versions** (`/routines/{id}/versions`): the kept versions, newest first, each readable as it was saved. Since the Spec 4 fixes (section 8), only the current version and versions a workout used are kept.
   - **Save as routine:** a button at the bottom of a workout in History. Name defaults to the workout title; pick a folder, no folder, or a new one.
 - **Prefill rule:** `frontend/app/src/lib/prefill.ts`, exported for Spec 5, not used by any screen yet. Rule in `CLAUDE.md`.
 - **Tests:** 44 backend (5 new in `test_routines.py`: new version leaves the old one unchanged, stale parent is a conflict, the database refuses updates to a version, superset rules, save as routine copies sets and skips RPE, delete only when unused, user isolation for folders, routines, and versions) and 6 frontend (`frontend/app/tests/prefill.test.ts`, Node's own test runner, no new packages). `0005` downgrades and upgrades cleanly.
@@ -256,7 +256,17 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 | Wife sees none of Trav's folders or routines and can make her own | isolation test passes; on her phone, pending |
 | Dump before migrations; memory under limits | done (see above) |
 
-## 8. Known gaps
+## 8. Spec 4 fixes
+
+**Status:** built and tested; deploy details below.
+
+- **Superset moves** (`src/lib/reorder.ts`, rules in `CLAUDE.md`): moving an exercise within its superset keeps it there; past the first or last exercise takes it out; a lone exercise skips past a whole superset instead of landing inside it; a superset moves as one unit from its header. Works by drag and by buttons in reorder mode (`components/ExerciseOrder.tsx`, with a line showing where it will land and "In superset A" or "Not in a superset" on the dragged row), and by the buttons on each card (the first card of a superset has the group's buttons). Every move is announced.
+- **Save as routine** still saves immediately, then opens the new routine's view page (`/routines/{id}`, read-only, Edit button) with "Saved as a routine in {folder}." The editor moved to `/routines/{id}/edit`. Tapping a routine on the Routines page now opens the view page too; Edit is on it and in the routine's options.
+- **Focus:** one ring on every control, a 2px outline in `--accent-text` from the base-layer rule in `styles.css`. The old rule was outside Tailwind's layers, so it beat `outline-none` and doubled the editor's wrapper ring; it also forced a 4px corner on rounded inputs, and its color (`--accent`) was only 2.65:1 on the light background. Now 4.15:1 or better on every background in both themes.
+- **Version pruning** (`0006`): `parent_version_id` lost its foreign key and keeps its value. Every non-current version that no workout references was deleted once. A save now deletes the version it replaced in the same transaction, unless a workout references it. The conflict check runs first, unchanged. `workouts.routine_version_id` (RESTRICT) was already added by `0005` in Spec 4, so `0006` didn't add it again. Delete-only-if-unused already used that column. `0006` downgrades (the foreign key comes back as NOT VALID; pruned versions don't come back).
+- **Tests:** 46 backend, 11 frontend. New or rewritten for this: `test_saving_prunes_the_previous_version_when_no_workout_used_it`, `test_stale_save_is_a_conflict_even_when_its_parent_was_pruned`, `test_a_version_a_workout_used_survives_saves_and_postgres_wont_delete_it`, `test_used_routines_and_folders_only_archive_and_postgres_refuses_deletes`, and five superset move tests in `tests/reorder.test.ts`. A one-off check (not kept) ran `0006` on a routine with 7 versions, one used by a workout: the current one and the used one remained, with their exercises, and it downgraded and upgraded cleanly.
+
+## 9. Known gaps
 
 - The timer test screen is temporary and is removed when the workout screen is built (Spec 5).
 - Routine editing needs a connection. Viewing and starting routines offline is Spec 5; offline editing comes after v1 (the conflict check and client ids are ready for it).

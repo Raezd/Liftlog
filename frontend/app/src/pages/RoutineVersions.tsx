@@ -16,7 +16,7 @@ export function RoutineVersions() {
   return (
     <Page title="Versions" back={`/routines/${id}`}>
       {routine.data && <p className="-mt-3 mb-4 font-bold">{routine.data.name}</p>}
-      <p className="mb-4 text-sm text-muted">Each save makes a new version. Earlier versions never change.</p>
+      <p className="mb-4 text-sm text-muted">Kept: the current version, and any version a workout used. Each version never changes once saved.</p>
       {list.isPending && <Loading />}
       <ErrorText error={list.error} />
       {list.data && (

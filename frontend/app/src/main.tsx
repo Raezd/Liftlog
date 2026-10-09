@@ -11,6 +11,7 @@ import History from "./pages/History";
 import Import from "./pages/Import";
 import Library from "./pages/Library";
 import RoutineEdit from "./pages/RoutineEdit";
+import RoutineView from "./pages/RoutineView";
 import Routines from "./pages/Routines";
 import { RoutineVersionPage, RoutineVersions } from "./pages/RoutineVersions";
 import Settings from "./pages/Settings";
@@ -37,7 +38,8 @@ const router = createBrowserRouter([
     children: [
       { path: "/", element: <Routines /> },
       { path: "/routines/new", element: <RoutineEdit /> },
-      { path: "/routines/:id", element: <RoutineEdit /> },
+      { path: "/routines/:id", element: <RoutineView /> },
+      { path: "/routines/:id/edit", element: <RoutineEdit /> },
       { path: "/routines/:id/versions", element: <RoutineVersions /> },
       { path: "/routines/:id/versions/:vid", element: <RoutineVersionPage /> },
       { path: "/history", element: <History /> },

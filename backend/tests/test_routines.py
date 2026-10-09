@@ -1,9 +1,10 @@
-"""Routines: saving makes a new version and leaves the old one alone, save
-as routine copies sets without RPE, and folders and routines are private."""
+"""Routines: saving makes a new version and prunes the one it replaced unless
+a workout used it, stale saves conflict, save as routine copies sets without
+RPE, used routines can't be deleted, and folders and routines are private."""
 
 import pytest
 from sqlalchemy import text, update
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.db import get_sessionmaker
 from app.models import RoutineSet
@@ -15,40 +16,96 @@ def bench(client, headers=TRAV):
     return client.post("/api/exercises", headers=headers, json={"catalog_id": "Barbell_Bench_Press_-_Medium_Grip"}).json()
 
 
-def test_saving_makes_a_new_version_and_keeps_the_old_one(client, db):
-    ex = bench(client)
-    r = client.post("/api/routines", headers=TRAV, json={"name": "Day 1", "version": {"exercises": [{
+def make_routine(client, ex, name="Day 1", **extra):
+    return client.post("/api/routines", headers=TRAV, json={"name": name, **extra, "version": {"exercises": [{
         "exercise_id": ex["id"], "rest_seconds": 120,
         "sets": [{"set_type": "warmup", "reps_min": 10, "weight_value": "95", "weight_unit": "lb"},
                  {"reps_min": 5, "weight_value": "185", "weight_unit": "lb"}]}]}}).json()
+
+
+def edit(client, r, parent, reps_max=12):
+    return client.post(f"/api/routines/{r['id']}/versions", headers=TRAV, json={
+        "parent_version_id": parent, "exercises": [{
+            "exercise_id": r["current_version"]["exercises"][0]["exercise_id"], "rest_seconds": 150,
+            "sets": [{"set_type": "warmup", "reps_min": 10, "weight_value": "95", "weight_unit": "lb"},
+                     {"reps_min": 8, "reps_max": reps_max, "weight_value": "175", "weight_unit": "lb"}]}]})
+
+
+def started_from(version_id):
+    """Spec 5a links a workout to the version it started from. Fake that here."""
+    with get_sessionmaker()() as s:
+        wid = s.execute(text("SELECT id FROM workouts ORDER BY started_at LIMIT 1")).scalar_one()
+        s.execute(text("UPDATE workouts SET routine_version_id = :v WHERE id = :w"), {"v": version_id, "w": wid})
+        s.commit()
+
+
+def version_rows(routine_id):
+    with get_sessionmaker()() as s:
+        return s.execute(text("SELECT id::text FROM routine_versions WHERE routine_id = :r ORDER BY number"),
+                         {"r": routine_id}).scalars().all()
+
+
+def test_saving_prunes_the_previous_version_when_no_workout_used_it(client, db):
+    r = make_routine(client, bench(client))
     v1 = r["current_version"]
     assert v1["number"] == 1
     assert v1["exercises"][0]["sets"][0]["reps_max"] == 10  # one number is a fixed target
 
-    edited = {"parent_version_id": v1["id"], "exercises": [{
-        "exercise_id": ex["id"], "rest_seconds": 150,
-        "sets": [{"set_type": "warmup", "reps_min": 10, "weight_value": "95", "weight_unit": "lb"},
-                 {"reps_min": 8, "reps_max": 12, "weight_value": "175", "weight_unit": "lb"}]}]}
-    s = client.post(f"/api/routines/{r['id']}/versions", headers=TRAV, json=edited)
+    s = edit(client, r, v1["id"])
     assert s.status_code == 201
     v2 = s.json()["current_version"]
+    # parent_version_id still records what the edit was based on, though v1 is gone.
     assert (v2["number"], v2["parent_version_id"]) == (2, v1["id"])
     assert (v2["exercises"][0]["sets"][1]["reps_min"], v2["exercises"][0]["sets"][1]["reps_max"]) == (8, 12)
+    assert version_rows(r["id"]) == [v2["id"]]
+    assert client.get(f"/api/routines/{r['id']}/versions/{v1['id']}", headers=TRAV).status_code == 404
+    with get_sessionmaker()() as session:  # its exercises and sets went with it
+        assert session.execute(text("SELECT count(*) FROM routine_exercises WHERE version_id = :v"),
+                               {"v": v1["id"]}).scalar_one() == 0
 
-    # The old version reads back exactly as it was.
-    old = client.get(f"/api/routines/{r['id']}/versions/{v1['id']}", headers=TRAV).json()
-    assert old == v1
+    # Several more saves still leave one version.
+    parent = v2["id"]
+    for n in range(9, 13):
+        parent = edit(client, r, parent, reps_max=n).json()["current_version"]["id"]
+    assert version_rows(r["id"]) == [parent]
     versions = client.get(f"/api/routines/{r['id']}/versions", headers=TRAV).json()
-    assert [(v["number"], v["current"]) for v in versions] == [(2, True), (1, False)]
-
-    # Saving from a stale parent is a conflict and writes nothing.
-    stale = client.post(f"/api/routines/{r['id']}/versions", headers=TRAV, json={**edited, "exercises": []})
-    assert stale.status_code == 409 and stale.json()["detail"]["code"] == "version_conflict"
-    assert client.get(f"/api/routines/{r['id']}", headers=TRAV).json()["current_version"] == v2
+    assert [(v["number"], v["current"]) for v in versions] == [(6, True)]
 
     # And the database itself refuses to change a version.
     with get_sessionmaker()() as session, pytest.raises(DBAPIError, match="immutable"):
         session.execute(update(RoutineSet).values(reps_min=1))
+        session.commit()
+
+
+def test_stale_save_is_a_conflict_even_when_its_parent_was_pruned(client, db):
+    r = make_routine(client, bench(client))
+    v1 = r["current_version"]["id"]
+    v2 = edit(client, r, v1).json()["current_version"]
+    assert version_rows(r["id"]) == [v2["id"]]  # v1 is pruned
+    stale = edit(client, r, v1, reps_max=15)
+    assert stale.status_code == 409 and stale.json()["detail"]["code"] == "version_conflict"
+    # Nothing written, nothing pruned.
+    assert client.get(f"/api/routines/{r['id']}", headers=TRAV).json()["current_version"] == v2
+    assert version_rows(r["id"]) == [v2["id"]]
+
+
+def test_a_version_a_workout_used_survives_saves_and_postgres_wont_delete_it(client, db):
+    _, res = resolve_all(client, TRAV)
+    do_import(client, TRAV, res)
+    r = make_routine(client, bench(client))
+    v1 = r["current_version"]
+    started_from(v1["id"])
+
+    v2 = edit(client, r, v1["id"]).json()["current_version"]
+    v3 = edit(client, r, v2["id"]).json()["current_version"]
+    # v1 is kept because a workout used it; v2 wasn't, so it's gone.
+    assert version_rows(r["id"]) == [v1["id"], v3["id"]]
+    assert client.get(f"/api/routines/{r['id']}/versions/{v1['id']}", headers=TRAV).json() == v1
+    versions = client.get(f"/api/routines/{r['id']}/versions", headers=TRAV).json()
+    assert [(v["number"], v["current"]) for v in versions] == [(3, True), (1, False)]
+
+    with get_sessionmaker()() as session, pytest.raises(IntegrityError):
+        session.execute(text("DELETE FROM routine_versions WHERE id = :v"), {"v": v1["id"]})
         session.commit()
 
 
@@ -100,27 +157,37 @@ def test_save_as_routine_copies_sets_and_skips_rpe(client, db):
     assert [(f["name"], [x["name"] for x in f["routines"]]) for f in folders] == [("PPL", [w["title"]])]
 
 
-def test_unused_routines_delete_and_used_ones_only_archive(client, db):
+def test_used_routines_and_folders_only_archive_and_postgres_refuses_deletes(client, db):
     ex = bench(client)
     f = client.post("/api/folders", headers=TRAV, json={"name": "Upper/Lower"}).json()
-    r = client.post("/api/routines", headers=TRAV, json={
-        "name": "Upper", "folder_id": f["id"], "version": {"exercises": [{"exercise_id": ex["id"]}]}}).json()
-    # Spec 5 links workouts to the version they started from. Fake one here.
+    r = make_routine(client, ex, "Upper", folder_id=f["id"])
     _, res = resolve_all(client, TRAV)
     do_import(client, TRAV, res)
-    with get_sessionmaker()() as s:
-        s.execute(text("UPDATE workouts SET routine_version_id = :v WHERE id = (SELECT id FROM workouts LIMIT 1)"),
-                  {"v": r["current_version"]["id"]})
-        s.commit()
+    started_from(r["current_version"]["id"])
+    # The used version is no longer current after this edit; it still counts.
+    edit(client, r, r["current_version"]["id"])
+
     assert client.delete(f"/api/routines/{r['id']}", headers=TRAV).json()["detail"]["code"] == "in_use"
     assert client.delete(f"/api/folders/{f['id']}", headers=TRAV).json()["detail"]["code"] == "in_use"
+    # Past the API, Postgres refuses too (workouts.routine_version_id is ON DELETE RESTRICT).
+    for sql, arg in (("DELETE FROM routines WHERE id = :x", r["id"]),
+                     ("DELETE FROM routines WHERE folder_id = :x", f["id"])):
+        with get_sessionmaker()() as session, pytest.raises(IntegrityError):
+            session.execute(text(sql), {"x": arg})
+            session.commit()
+    assert len(version_rows(r["id"])) == 2
+
     assert client.patch(f"/api/routines/{r['id']}", headers=TRAV, json={"archived": True}).status_code == 200
     assert client.get("/api/routines", headers=TRAV).json()["folders"][0]["routines"] == []
     assert client.get("/api/routines?archived=true", headers=TRAV).json()["folders"][0]["routines"][0]["archived"]
 
+    # An unused copy deletes, and so does an unused folder.
     copy = client.post(f"/api/routines/{r['id']}/duplicate", headers=TRAV, json={}).json()
     assert copy["name"] == "Upper copy" and copy["current_version"]["number"] == 1
     assert client.delete(f"/api/routines/{copy['id']}", headers=TRAV).status_code == 204
+    empty = client.post("/api/folders", headers=TRAV, json={"name": "Empty"}).json()
+    make_routine(client, ex, "Unused", folder_id=empty["id"])
+    assert client.delete(f"/api/folders/{empty['id']}", headers=TRAV).status_code == 204
 
 
 def test_folders_and_routines_are_private(client, db):

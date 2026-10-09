@@ -121,7 +121,7 @@ export default function Import() {
             In Hevy, open Profile, then Settings, then Export &amp; Import Data, and export your workouts.
             Import the whole file each time. Workouts already here are skipped.
           </p>
-          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-line bg-surface p-6 text-center focus-within:ring-2 focus-within:ring-accent">
+          <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-line bg-surface p-6 text-center focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-text">
             <FileUp size={28} className="text-muted" aria-hidden />
             <span className="font-bold">{preview.isPending ? "Reading..." : file ? file.name : "Choose the Hevy CSV file"}</span>
             <input type="file" accept=".csv,text/csv" className="sr-only" disabled={preview.isPending}

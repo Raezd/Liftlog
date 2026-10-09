@@ -92,8 +92,14 @@ h1, h2, h3, .display {
 .num, .display { font-variant-numeric: tabular-nums; }
 .num { font-family: var(--font-display); }
 
-:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: 4px;
+/* The one focus indicator, app-wide: a 2px ring in --accent-text (at least
+   3:1 on ground, surface, and sunken in both themes). In the base layer so a
+   component that draws its own ring (focus-within on a wrapper) can turn this
+   off with outline-none. No border-radius here: the outline follows each
+   element's own corners. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent-text);
+    outline-offset: 2px;
+  }
 }

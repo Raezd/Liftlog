@@ -266,8 +266,8 @@ function RoutineActions({ routine: r, folders, onDone }: { routine: RoutineSumma
         <Button type="submit" className="mb-3" disabled={act.isPending || folder === (r.folder_id ?? "")}>Move</Button>
       </form>
       <div className="grid gap-2">
-        <Link to={`/routines/${r.id}`} className={btn.secondary}>Edit</Link>
-        <Link to={`/routines/${r.id}/versions`} className={btn.secondary}>Earlier versions</Link>
+        <Link to={`/routines/${r.id}/edit`} className={btn.secondary}>Edit</Link>
+        <Link to={`/routines/${r.id}/versions`} className={btn.secondary}>Versions</Link>
         <Button disabled={act.isPending} onClick={() => act.mutate({ method: "POST", path: `${path}/duplicate`, body: { id: uuid7() } })}>
           Duplicate
         </Button>

@@ -32,7 +32,7 @@ From `docs/v1-scope.md`, which wins if the two ever disagree:
 3. **The backend and database have no internet.** Both sit on internal networks; only the Tailscale container has a route out.
 4. **Secrets live in `.env`** (chmod 600, gitignored). Never commit `.env`, `data/`, or anything under `data/`. Never print secret values in output. Every variable is listed, without values, in `.env.example`. Off-site backup credentials are root-only files in `/etc/restic`: never read or print anything there, and never ask for key values; Trav handles those himself.
 5. **No new external service or outbound dependency without Trav's approval first.** That includes CDNs, APIs, analytics, fonts, and anything the backend or browser would call out to. Fonts and assets are self-hosted.
-6. **Every schema change is an Alembic migration** in `backend/alembic/versions/`, numbered sequentially (`0005` is the latest; next is `0006`). Migrations must upgrade and downgrade cleanly. Deploy with `scripts/deploy.sh`, which takes a pg_dump before the backend starts and migrates.
+6. **Every schema change is an Alembic migration** in `backend/alembic/versions/`, numbered sequentially (`0006` is the latest; next is `0007`). Migrations must upgrade and downgrade cleanly. Deploy with `scripts/deploy.sh`, which takes a pg_dump before the backend starts and migrates.
 7. **Every query on user data is scoped to the caller.** Get the user with the `CurrentUser` dependency (`app/users.py`) and filter on `user_id`, or load by id with `owned()`. Another user's object answers **404, never 403**, so ids never reveal what exists. User B getting 404 on user A's exercises, workouts, and imports is tested (`tests/test_data.py`), and on folders, routines, and versions (`tests/test_routines.py`); extend those tests when adding a new kind of user object.
 
 ## Data model
@@ -54,11 +54,11 @@ Primary keys are UUIDv7 (`models.uuid7()`). Clients may send their own ids (offl
 | `hevy_title_mappings` | A Hevy exercise title resolved to one of the user's exercises, so later imports don't ask again. |
 | `routine_folders` | A program ("Upper/Lower", "PPL"). Name, `position` (user order), `archived`. |
 | `routines` | One day ("Day 4: Deadlift"), in a folder or not (`folder_id` null). Name, `position` within its folder, `archived`, `current_version_id`. |
-| `routine_versions` | Immutable content of a routine: `number` (1, 2, 3 per routine), `parent_version_id` (the version it was edited from), `superset_rests` (JSONB, group to seconds). |
+| `routine_versions` | Immutable content of a routine: `number` (1, 2, 3 per routine), `parent_version_id` (the version it was edited from; a plain id with no foreign key, since that version is usually pruned), `superset_rests` (JSONB, group to seconds). Only the current version and versions a workout used are kept. |
 | `routine_exercises` | Per version: position, user exercise, `superset_group` (up to three adjacent exercises, numbered 0, 1, 2 per version), notes, `rest_seconds`. |
 | `routine_sets` | Per-set targets, all optional: `set_type`, `reps_min`/`reps_max` (equal for a fixed number), weight as entered plus unit plus kg, RPE, duration, distance as entered plus meters. |
 
-`workouts.routine_version_id` (null for imports) records the version a workout started from; Spec 5 fills it.
+`workouts.routine_version_id` (null for imports; foreign key ON DELETE RESTRICT, added in `0005`) records the version a workout started from. Nothing writes it until Spec 5a.
 
 Copying a catalog exercise tagged shoulders turns shoulders into the delts its name suggests (`catalog.suggest_delts`: rear delt, reverse fly, face pull are rear; lateral or side raise is side; press and front raise are front) and sets `needs_review`. Saving the muscles (library edit, or "these delts are right" on the import screen) clears it.
 
@@ -74,13 +74,14 @@ Mapping: `superset_id` to superset group, `set_type` to ours (`dropset` to `drop
 
 ## Routines
 
-Routes in `app/routers/routines.py`; pages `Routines.tsx`, `RoutineEdit.tsx`, `RoutineVersions.tsx`; save as routine is on `WorkoutView.tsx`.
+Routes in `app/routers/routines.py`; pages `Routines.tsx`, `RoutineView.tsx` (`/routines/{id}`, read-only, with Edit), `RoutineEdit.tsx` (`/routines/{id}/edit`), `RoutineVersions.tsx`; save as routine is on `WorkoutView.tsx` and lands on the view page with a confirmation naming the folder.
 
-- **Versioning.** Every save of a routine's content (`POST /api/routines/{id}/versions`) writes a new version and moves `current_version_id`. Versions, their exercises, and their sets are never updated (a trigger rejects UPDATE), so a workout that started from a version keeps exactly what it used. Renaming, moving, archiving, and reordering change the routine row only.
-- **Conflicts.** A save sends `parent_version_id`. If that isn't the current version, the answer is 409 `version_conflict` and nothing is written; the editor offers to load the latest. Never overwrite. This is what makes offline editing (after v1) safe.
+- **Versioning and pruning.** Every save of a routine's content (`POST /api/routines/{id}/versions`) writes a new version and moves `current_version_id`. In the same transaction it deletes the version it replaced, unless a workout references it (`workouts.routine_version_id`). So a routine keeps its current version plus every version a workout used, and nothing else. Versions never change once written (a trigger rejects UPDATE), and Postgres refuses to delete one a workout references (RESTRICT). Renaming, moving, archiving, and reordering change the routine row only. `0006` pruned every existing non-current version once. Pruned versions can't be restored.
+- **Conflicts.** A save sends `parent_version_id`. The check runs before pruning and compares it to the routine's current version: if it isn't current (including when that parent has since been pruned), the answer is 409 `version_conflict` and nothing is written or pruned; the editor offers to load the latest. Never overwrite. This is what makes offline editing (after v1) safe.
 - **Ids.** Folder, routine, version, exercise, and set ids may come from the client (UUIDv7). A retry with the caller's own id returns the existing row; someone else's id is 409.
-- **Delete or archive.** A routine or folder no workout has used (`workouts.routine_version_id`) can be deleted; deleting a folder deletes its routines. Once used, only archive (409 `in_use` otherwise; the FK is RESTRICT too). Restoring a routine restores its folder.
-- **Supersets.** The editor rejects a split group or more than three; a group of one is dropped. Save as routine splits a workout's groups into runs of three.
+- **Delete or archive.** A routine or folder can be deleted only if no workout references any of its versions (`workouts.routine_version_id`); deleting a folder deletes its routines. Otherwise only archive (409 `in_use`; the RESTRICT foreign key refuses it in Postgres too). Restoring a routine restores its folder.
+- **Supersets.** The API rejects a split group or more than three; a group of one is dropped. Save as routine splits a workout's groups into runs of three.
+- **Superset move rules** (`frontend/app/src/lib/reorder.ts`, pure, tested in `frontend/app/tests/reorder.test.ts`; use it wherever exercises are reordered, including the Spec 5a Overview): moving an exercise within its own superset keeps it in the group. Moving it past the group's first or last exercise takes it out; with the buttons, one step past an edge leaves the group and stays next to it. A lone exercise never lands inside another superset; it goes past the whole group. A whole superset moves as one unit from its header, by drag and by buttons. The rest after each round stays with the group's first exercise. Every move is announced to screen readers (`describeExercise`, `describeUnit`). The editor's reorder mode is `components/ExerciseOrder.tsx`.
 - **Save as routine** (`POST /api/routines/from-workout`): exercises, order, supersets, notes, set types, and each set's weight and reps (plus duration and distance) become fixed targets. RPE is not copied.
 
 **Prefill rule** (`frontend/app/src/lib/prefill.ts`, pure TypeScript for offline use in Spec 5; tests in `frontend/app/tests/`, run with `npm test` on Node's own runner, no packages): per exercise, use the most recent finished workout from the same routine (any version) that included it, else the most recent finished workout with it from anywhere. Imported workouts count and count as finished. Match sets by position within the same set type (second warm-up to second warm-up). Use the matched set's weight and reps (and duration and distance); a field it left empty falls back to the target. No matching set: the target (a range prefills its low end). No target: empty. A rep range always shows as a hint ("8 to 12") and never changes the value. If the routine has an exercise twice, the nth one matches the nth one in the past workout. Keep the file free of runtime imports.
@@ -109,12 +110,12 @@ The box is tight. Memory limits are in `docker-compose.yml`: db 256 MB, backend 
 
   Use them through Tailwind (`bg-surface`, `text-muted`, `border-line`, `text-accent-text`). Never hard-code a palette color in components. Keep WCAG AA contrast.
 - **Layout:** mobile first, single column, max width `max-w-md`, safe-area insets respected. Size text and spacing in rem. Tap targets at least 44 px.
-- **Accessibility:** labels on every input, screen-reader text on icon-only buttons and color-only indicators, `prefers-reduced-motion` respected.
+- **Accessibility:** labels on every input, screen-reader text on icon-only buttons and color-only indicators, `prefers-reduced-motion` respected. **One focus indicator per control:** the base-layer `:focus-visible` rule in `src/styles.css` (2px outline in `--accent-text`, at least 4:1 on every background in both themes). A component that draws its own ring on a wrapper uses `focus-within:outline-*` there and `outline-none` on the input. Never add a second ring, and never put focus styles outside the base layer, or they'll beat `outline-none`.
 
 ## Workflow
 
 - **One spec per session.** Each session implements exactly one spec, end to end: build, test, commit, deploy, update `HANDOFF.md`. Don't start the next spec or slip in unrelated work. If something out of scope comes up, note it in `HANDOFF.md` and ask.
-- **Minimal testing.** Test what would hurt if it broke silently: auth, privacy, and data integrity rules (today: auth and CORS, the 4 AM workout date with DST, user isolation, import dedupe and atomicity, exact weights, set type mapping, the muscle-map log, routine versioning and conflicts, save as routine, the prefill rule). Don't write tests for layout, copy, or simple CRUD. Run the backend tests, the frontend tests, and the frontend build before every commit.
+- **Minimal testing.** Test what would hurt if it broke silently: auth, privacy, and data integrity rules (today: auth and CORS, the 4 AM workout date with DST, user isolation, import dedupe and atomicity, exact weights, set type mapping, the muscle-map log, routine versioning, pruning, and conflicts, save as routine, the prefill rule, the superset move rules). Don't write tests for layout, copy, or simple CRUD. Run the backend tests, the frontend tests, and the frontend build before every commit.
 - **Ask Trav before:** anything touching auth or networking, deleting data, raising memory limits, or adding an external service or outbound dependency.
 
 ## Commands
@@ -128,7 +129,7 @@ scripts/deploy.sh
 # Backend tests, against a throwaway Postgres on an internal network (never the live one).
 scripts/test-backend.sh
 
-# Frontend unit tests (the prefill rule).
+# Frontend unit tests (the prefill rule, the superset move rules).
 cd frontend/app && docker run --rm -v "$PWD":/src:ro -w /src node:22-alpine npm test
 
 # Frontend build check. Node isn't installed on the host.
