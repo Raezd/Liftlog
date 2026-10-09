@@ -10,6 +10,7 @@ from app.db import get_sessionmaker
 from app.models import RoutineSet
 from conftest import PARTNER, TRAV
 from test_data import do_import, resolve_all
+from test_workouts import payload, upload
 
 
 def bench(client, headers=TRAV):
@@ -31,12 +32,10 @@ def edit(client, r, parent, reps_max=12):
                      {"reps_min": 8, "reps_max": reps_max, "weight_value": "175", "weight_unit": "lb"}]}]})
 
 
-def started_from(version_id):
-    """Spec 5a links a workout to the version it started from. Fake that here."""
-    with get_sessionmaker()() as s:
-        wid = s.execute(text("SELECT id FROM workouts ORDER BY started_at LIMIT 1")).scalar_one()
-        s.execute(text("UPDATE workouts SET routine_version_id = :v WHERE id = :w"), {"v": version_id, "w": wid})
-        s.commit()
+def started_from(client, version_id):
+    """Uploads a finished workout that started from this version."""
+    ex = client.get("/api/exercises", headers=TRAV).json()[0]
+    assert upload(client, payload(ex["id"], version=version_id))[1].status_code == 201
 
 
 def version_rows(routine_id):
@@ -94,7 +93,7 @@ def test_a_version_a_workout_used_survives_saves_and_postgres_wont_delete_it(cli
     do_import(client, TRAV, res)
     r = make_routine(client, bench(client))
     v1 = r["current_version"]
-    started_from(v1["id"])
+    started_from(client, v1["id"])
 
     v2 = edit(client, r, v1["id"]).json()["current_version"]
     v3 = edit(client, r, v2["id"]).json()["current_version"]
@@ -163,7 +162,7 @@ def test_used_routines_and_folders_only_archive_and_postgres_refuses_deletes(cli
     r = make_routine(client, ex, "Upper", folder_id=f["id"])
     _, res = resolve_all(client, TRAV)
     do_import(client, TRAV, res)
-    started_from(r["current_version"]["id"])
+    started_from(client, r["current_version"]["id"])
     # The used version is no longer current after this edit; it still counts.
     edit(client, r, r["current_version"]["id"])
 

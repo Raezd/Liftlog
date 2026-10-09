@@ -1,7 +1,7 @@
 """Database models. Every table a user owns carries user_id (directly or
 through its workout), and every query filters on it: see app/users.py.
 
-Primary keys are UUIDv7. Clients may supply their own (offline sync, Spec 5);
+Primary keys are UUIDv7. Clients may supply their own (offline sync);
 the server makes them for imports and anything else it creates.
 """
 
@@ -155,6 +155,9 @@ class HevyTitleMapping(Base):
 
 
 class Workout(Base):
+    """Finished workouts (ended_at set) are immutable in Postgres: see 0007.
+    Only the transaction that creates one, or edit_finished_workout(), which
+    writes workout_changes, can change it or its exercises and sets."""
     __tablename__ = "workouts"
     id: Mapped[uuid.UUID] = _id()
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -170,7 +173,10 @@ class Workout(Base):
     import_key: Mapped[str | None] = mapped_column(Text)
     # SHA-256 of the workout's rows as imported, to tell a re-import from a changed workout.
     import_hash: Mapped[str | None] = mapped_column(Text)
-    # The routine version this workout started from (Spec 5). Null for imports.
+    # SHA-256 of the upload (PUT /api/workouts/{id}): a retry with the same
+    # content is a no-op, different content is a conflict. Null for imports.
+    upload_hash: Mapped[str | None] = mapped_column(Text)
+    # The routine version this workout started from. Null for imports and empty workouts.
     routine_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("routine_versions.id", ondelete="RESTRICT"))
     created_at: Mapped[dt.datetime] = _created()
@@ -196,9 +202,13 @@ class WorkoutExercise(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     # The name when it was logged. Display uses the exercise's current name.
     logged_name: Mapped[str] = mapped_column(Text, nullable=False)
+    # The rest it used (for a superset's first exercise, the rest after each
+    # round), so the next workout can default to it. Null for imports.
+    rest_seconds: Mapped[int | None] = mapped_column(Integer)
     sets: Mapped[list[Set]] = relationship(order_by="Set.position", cascade="all, delete-orphan")
     __table_args__ = (
         UniqueConstraint("workout_id", "position", name="uq_workout_exercises_position"),
+        CheckConstraint("rest_seconds IS NULL OR rest_seconds BETWEEN 0 AND 3600", name="ck_workout_exercises_rest"),
         Index("ix_workout_exercises_exercise", "exercise_id"),
     )
 
@@ -240,8 +250,8 @@ class Set(Base):
 
 
 class WorkoutChange(Base):
-    """Finished workouts are never updated in place. Any edit (Spec 5 and
-    later) writes the before and after here."""
+    """Finished workouts are never updated in place. Any edit goes through
+    edit_finished_workout() (0007), which writes the before and after here."""
     __tablename__ = "workout_changes"
     id: Mapped[uuid.UUID] = _id()
     workout_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workouts.id"), nullable=False)
