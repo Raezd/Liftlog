@@ -1,0 +1,99 @@
+@import "tailwindcss";
+/* Self-hosted from npm packages, never a CDN. */
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource/atkinson-hyperlegible/400.css";
+@import "@fontsource/atkinson-hyperlegible/700.css";
+
+/* Dark mode follows the OS for now. A data-theme attribute on the root
+   overrides it either way, ready for a theme setting later. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Atkinson Hyperlegible", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-text: var(--accent-text);
+  --color-over: var(--over);
+
+  /* Surfaces and ink, switched per theme below. */
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+}
+
+/* Foodlog's earth palette. Same values, so the two apps feel related. */
+:root {
+  --ground: #F3E7DC;
+  --surface: #FBF5EF;
+  --sunken: #E9DACB;
+  --ink: #2A1B14;
+  --muted: #6E5444;
+  --line: #DCC8B6;
+  --over: #A8432A;
+  --accent: #D2792B;
+  --accent-strong: #9E5316;
+  --accent-text: #9E5316;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #2A1B14;
+    --surface: #36241B;
+    --sunken: #221510;
+    --ink: #F3E7DC;
+    --muted: #C2A58F;
+    --line: #4C3528;
+    --over: #E8876A;
+    --accent: #D2792B;
+    --accent-strong: #9E5316;
+    --accent-text: #D2792B;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground: #2A1B14;
+  --surface: #36241B;
+  --sunken: #221510;
+  --ink: #F3E7DC;
+  --muted: #C2A58F;
+  --line: #4C3528;
+  --over: #E8876A;
+  --accent: #D2792B;
+  --accent-strong: #9E5316;
+  --accent-text: #D2792B;
+  color-scheme: dark;
+}
+
+html, body, #root { min-height: 100%; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+.num, .display { font-variant-numeric: tabular-nums; }
+.num { font-family: var(--font-display); }
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Liftlog health check (pings Uptime Kuma when healthy)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Replace YOUR_USER with your Linux username (must be in the docker group).
+User=YOUR_USER
+Environment=LIFTLOG_DIR=/home/YOUR_USER/liftlog
+# Root-only file holding KUMA_PUSH_URL. systemd reads it before dropping to
+# User=, so the user never needs read access. See HANDOFF.md.
+EnvironmentFile=/etc/liftlog/health.env
+ExecStart=/home/YOUR_USER/liftlog/scripts/healthcheck.sh
+TimeoutStartSec=60

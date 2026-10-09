@@ -1,0 +1,122 @@
+# Liftlog stack. Publishes NO host ports: the only way in is through the
+# Tailscale container, which serves HTTPS to your tailnet and nothing else.
+#
+#   tailnet --HTTPS--> tailscale (Serve) --> web/Caddy (127.0.0.1:8080)
+#                                               --> backend:8000 --> db:5432
+#
+# Separate project from Foodlog: its own database, sidecar, and networks.
+# Images are pinned to exact tags (here and in the Dockerfiles), matching Foodlog's.
+#
+# RAM is tight on this box, so every container has a memory limit.
+name: liftlog
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.102.2
+    hostname: liftlog
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_EXTRA_ARGS: --advertise-tags=tag:liftlog
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      # Userspace networking: no NET_ADMIN capability or /dev/net/tun needed.
+      TS_USERSPACE: "true"
+    volumes:
+      - ./data/tailscale:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    # edge: Tailscale needs the internet to reach the tailnet.
+    # app: so Caddy (in this namespace) can reach the backend.
+    networks: [edge, app]
+    mem_limit: 128m
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Deploy with BUILD_ID=$(git rev-parse --short HEAD) so the page shows
+        # the commit. Without it, the build uses a hash of the source.
+        BUILD_ID: ${BUILD_ID:-}
+    # Shares the Tailscale container's network stack. Caddy binds to that
+    # namespace's loopback, which only Tailscale Serve can reach.
+    network_mode: service:tailscale
+    environment:
+      PROXY_SECRET: ${PROXY_SECRET:?set PROXY_SECRET in .env}
+    depends_on:
+      tailscale:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/data, /config, /tmp]
+    cap_drop: [ALL]
+    # The Caddy image marks its binary with this file capability; without it
+    # Linux refuses to exec the binary at all.
+    cap_add: [NET_BIND_SERVICE]
+    mem_limit: 64m
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://liftlog:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/liftlog
+      PROXY_SECRET: ${PROXY_SECRET:?set PROXY_SECRET in .env}
+      ALLOWED_LOGINS: ${ALLOWED_LOGINS:?set ALLOWED_LOGINS in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Both networks are internal: the backend can reach Caddy and the
+    # database, and has no route to the internet.
+    networks: [app, db]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    mem_limit: 256m
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      # Every route sits behind the auth middleware, so this sends the same
+      # headers Caddy and Tailscale would (app/healthcheck.py).
+      test: ["CMD", "python", "-m", "app.healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  db:
+    image: postgres:17.11-alpine3.24
+    environment:
+      POSTGRES_USER: liftlog
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: liftlog
+    # Tuned small to fit the 256 MB limit next to Foodlog and the rest.
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=192MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=32MB
+      -c max_connections=20
+    shm_size: 64mb
+    # Internal NVMe on purpose. The USB drive only receives backups.
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    # Internal-only network: the database has no route to the internet at all.
+    networks: [db]
+    mem_limit: 256m
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liftlog -d liftlog"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  edge: {}
+  app:
+    internal: true
+  db:
+    internal: true

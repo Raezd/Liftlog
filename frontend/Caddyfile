@@ -1,0 +1,52 @@
+{
+	# No admin API, no automatic HTTPS. Tailscale Serve terminates TLS in
+	# front of this, so Caddy only ever sees traffic from inside the
+	# Tailscale container's network namespace.
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8080 {
+	# Loopback only. Shares the Tailscale container's network namespace, so
+	# Tailscale Serve is the only thing that can reach it.
+	bind 127.0.0.1
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			# Overwrites any client-supplied value, so only Caddy can set it.
+			header_up X-Liftlog-Proxy {env.PROXY_SECRET}
+		}
+	}
+
+	# Hashed build assets never change, so browsers can keep them forever.
+	# One that no longer exists is a plain 404, never the app shell: falling
+	# back to index.html here would cache HTML under a .js name for a year.
+	handle /assets/* {
+		root * /srv
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# The page shell and favicon must always be re-checked,
+	# or app updates wouldn't reach your devices.
+	handle {
+		root * /srv
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}

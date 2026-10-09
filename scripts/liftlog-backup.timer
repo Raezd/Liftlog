@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Liftlog backup nightly
+
+[Timer]
+# 15 minutes after foodlog-backup.timer (03:30), so the two dumps run one after the other.
+OnCalendar=*-*-* 03:45:00
+# If the machine was off at 03:45, run at next boot instead of skipping.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

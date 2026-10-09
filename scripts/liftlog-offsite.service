@@ -1,0 +1,14 @@
+[Unit]
+Description=Liftlog off-site restic backup to Backblaze B2
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root: it reads /etc/restic and the root-owned Tailscale state.
+# Replace YOUR_USER with your Linux username.
+Environment=LIFTLOG_DIR=/home/YOUR_USER/liftlog
+ExecStart=/home/YOUR_USER/liftlog/scripts/offsite-backup.sh
+# Stay out of the way of the services being backed up.
+Nice=10
+IOSchedulingClass=idle

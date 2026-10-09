@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the Liftlog off-site backup nightly
+
+[Timer]
+# After liftlog-backup.timer (03:45) and before Foodlog's offsite-backup.timer
+# (04:30), so the two restic runs don't overlap.
+OnCalendar=*-*-* 04:05:00
+# If the machine was off at 04:05, run at next boot instead of skipping.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
