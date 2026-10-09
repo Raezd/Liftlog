@@ -118,12 +118,74 @@ restic restore latest --tag liftlog --target /root/restore --include /mnt/storag
 restic restore latest --tag liftlog --target / --include /home/YOUR_USER/liftlog/data/tailscale
 ```
 
-## 5. Spec 2
+## 5. Spec 2: Android app and rest timer prototype
 
-**Capacitor shell and rest timer prototype** (`docs/v1-scope.md`, build order step 2). Wrap the React build in a Capacitor Android shell, add CORS for the Capacitor origin, and prove the rest timer works before any feature builds on it: it must fire on time with the phone locked, in airplane mode, with a custom sound, on both phones. Trav's phone locks between sets, which is why a pure PWA timer is ruled out. No data model yet; that's Spec 3.
+**Status:** built, deployed, and published (`6-52e57ce`, October 9, 2026). Phone acceptance tests are **not run yet**, so the scheduling path is undecided (see the results table).
+
+### What exists
+
+- **App:** Capacitor 8.5.2 Android project in `frontend/app/android`, app id `io.github.raezd.liftlog` (permanent: changing it means uninstalling). Plugins pinned exactly: `@capacitor/core`, `@capacitor/android`, `@capacitor/cli` 8.5.2, `@capacitor/local-notifications` 8.3.1. No iOS project. minSdk 26, target 36.
+- **Offline:** web files are bundled in the APK, never loaded from the server. The API base (`https://liftlog.tail9d27a0.ts.net`) is set at build time from the stack's own Tailscale name (`VITE_API_BASE`). The web build uses relative paths.
+- **CORS:** only `https://localhost` (the app's origin) gets CORS headers (`backend/app/main.py`). The desktop web build is same-origin. Auth wraps CORS, so preflights must pass both auth layers too. A disallowed preflight gets a bare 400 with no CORS headers. Tests are in `backend/tests/test_auth.py`.
+- **Timer test screen** (`src/timer/`, temporary, removed when the workout screen is built): 10/60/90/180 s timers, five 2:30 rests 30 s apart, Done resting, Cancel, path A/B switch, alarm sound toggle, server status and login, permission help, and a results list showing how late each alert was posted.
+- **Path A:** `@capacitor/local-notifications` with `allowWhileIdle` (`setExactAndAllowWhileIdle`). **Path B:** the app's own `RestAlarm` plugin (`RestAlarmPlugin.java`) using `AlarmManager.setAlarmClock`.
+- **Channels** (`RestAlerts.java`): `rest-timer-v1` (notification usage, follows the ringer) and `rest-timer-alarm-v1` (alarm usage, rings on vibrate or silent). Both high importance, vibration `0,700,250,700,250,700`, sound `res/raw/rest_alert.wav` (original, see `docs/rest-alert-sound.md`). A channel's sound can't change after creation: a new sound means `-v2` ids.
+- **Timer state** is absolute end times in `localStorage`. While the app is open it takes an alert over 600 ms before it's due (only if the native side says the app is in front), cancels the scheduled one, and plays the same sound and vibration in-app, so there's no duplicate notification. If the app leaves the front before the end, the alert is handed back to the phone.
+- **Permissions:** `POST_NOTIFICATIONS` is requested on first launch, `USE_EXACT_ALARM` is granted at install. The screen explains in plain words, with an Open settings button, if notifications, either channel, or exact alarms are off.
+- **`/download`:** a web page showing the latest version, served by the backend at `/api/app/latest` and `/api/app/liftlog.apk`, behind the auth middleware. Files are in `data/apk` (mounted read-only into the backend).
+
+### Build and publish
+
+```bash
+cd ~/liftlog
+scripts/android-build.sh      # clean tree required (ALLOW_DIRTY=1 for a test build)
+scripts/android-publish.sh    # newest build to /download
+```
+
+- Runs in the `liftlog-android-build:1` image (`scripts/android/Dockerfile`: Temurin JDK 21.0.12, Node 22.23.3). The Android SDK (command-line tools 15859902, checksum pinned; platform 36, build-tools 35.0.0), Gradle 8.14.3 (checksum pinned), and npm caches, and the built APKs, are in `/mnt/storage/liftlog-build` (1.9 GB after the first build). The script prints free space on `/` and `/mnt/storage` before and after, and refuses to run under 4 GB / 8 GB.
+- Version: code = `git rev-list --count HEAD`, name = `<code>-<short hash>`. Each commit raises the code, so updates install over the old version.
+- One-time setup (done): `sudo install -d -o $USER -g $USER -m 755 /mnt/storage/liftlog-build ~/liftlog/data/apk`.
+- At deploy, free space was 70 GB on `/` and 810 GB on `/mnt/storage`.
+
+### Signing and keystore backup
+
+- Keystore: `~/.liftlog-signing/liftlog-release.p12` (PKCS12, RSA 4096, alias `liftlog`, valid 100 years) and its password in `~/.liftlog-signing/keystore-password`. Directory 700, files 600, outside the repo. Made once by `scripts/android-keystore.sh`, which refuses to overwrite.
+- Certificate SHA-256: `612d7f374925c458783267a22f7b8d84f3877955c9f8bb466aa5fa8ea170b903`.
+- Off-site: `scripts/offsite-backup.sh` includes both files and fails (Discord alert) if either is missing. **Confirmed in restic snapshot `03eb37ba`** (2026-10-09 19:24) before any phone installed the app.
+- **Losing the keystore means every update needs an uninstall, which wipes the app's on-device data.** Restore it with `restic restore latest --tag liftlog --target / --include /home/YOUR_USER/.liftlog-signing`.
+
+### Installing and updating on a phone
+
+1. On the phone, with Tailscale on, open `https://liftlog.tail9d27a0.ts.net/download` and tap Download.
+2. Open the file. Allow the browser to install apps if asked.
+3. Tap Install (or Update). Updates keep data because every build is signed with the same key.
+4. First launch: allow notifications.
+
+### Acceptance tests (both phones, airplane mode, stopwatch, pass = within 2 s)
+
+| Test | Trav | Wife |
+|---|---|---|
+| Installs from /download, opens in airplane mode | | |
+| Shows own login with network and Tailscale on; desktop web still works | | |
+| 90 s timer, screen locked | | |
+| Five-timer sequence, locked in a pocket | | |
+| `adb shell dumpsys deviceidle force-idle`, three 60 s timers, **path A** | | |
+| Same, **path B** | | |
+| Fires after the app is swiped from recents | | |
+| Cancelled early never fires | | |
+| Audible in Bluetooth earbuds over music | | |
+| On vibrate: default vibrates only; alarm toggle plays sound | | |
+| Keystore and password in latest restic snapshot | `03eb37ba` | |
+| CORS test passes | pass (13 backend tests) | |
+
+**Scheduling path chosen:** not yet decided. Rule: if A passes every test, use A; if only B passes, use B. **Ringer default for v1:** to be decided from the vibrate test.
+
+### The rest of v1
 
 The remaining order: 3 data model, exercise library, and Hevy import; 4 routines; 5 workout card flow, offline storage and sync, plate math, finish and export; 6 history, PRs, charts, body-part volume; 7 measurements and the Foodlog summary API.
 
 ## 6. Known gaps
 
-- None yet beyond what's listed under Spec 2.
+- Spec 2 phone acceptance tests and the path A/B decision (section 5).
+- The app uses Capacitor's default launcher icon and splash.
+- `localStorage` holds the timer test state only. Real on-device storage (IndexedDB) and sync are Spec 5.
