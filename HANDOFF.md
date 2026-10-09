@@ -6,7 +6,8 @@ Current state of the project, how to run it, and what comes next. Rules for work
 
 - **App URL:** `https://liftlog.<tailnet>.ts.net`, via the Tailscale sidecar (hostname `liftlog`, `tag:liftlog`, userspace networking, Serve on 443, Funnel off).
 - **Users:** Trav and his wife, both in `ALLOWED_LOGINS`. She reaches the node through a Tailscale device share.
-- **Code:** `~/liftlog`, branch `main`, private GitHub repo `liftlog` via the deploy key `~/.ssh/github_liftlog` (SSH alias `github-liftlog`).
+- **Code:** `~/liftlog`, branch `main`, private GitHub repo `Raezd/Liftlog` via the deploy key `~/.ssh/github_liftlog` (SSH alias `github-liftlog`, write access).
+- **Deployed:** `34dfde2` on October 9, 2026, at `https://liftlog.tail9d27a0.ts.net`. Idle memory at deploy: backend 62 MiB, db 15 MiB, tailscale 30 MiB, web 15 MiB, about 123 MiB total. Kuma push monitor `Liftlog` and the Homepage tile (Health group) are set up.
 - **Separate from Foodlog:** own Compose project, database, Tailscale node, networks, backups, and off-site job. Nothing here depends on `~/foodlog`.
 - **Backend:** FastAPI with the two-layer auth as middleware on every route (`app/auth.py`). Routes: `GET /api/health` (`{"status", "database"}`, 503 when the database doesn't answer) and `GET /api/me` (`{"login"}`). Alembic has one empty baseline, `0001`. No tables yet.
 - **Frontend:** Vite, React 19, TypeScript, Tailwind. One hello page showing the app name, your login, backend and database health, and the build version. Earth palette in light and dark, self-hosted fonts.
