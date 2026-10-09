@@ -4,17 +4,23 @@ Self-hosted workout tracker for a small household (Trav and his wife). Runs on t
 
 ## Product principles
 
-- **Accuracy and integrity over convenience.** Logged history never silently changes. Anything that would rewrite past data needs Trav's explicit approval.
-- **Private by default.** Each person's data is theirs. Nothing is shared without an explicit opt-in, and privacy is enforced on the server, not in the UI.
+From `docs/v1-scope.md`, which wins if the two ever disagree:
+
+- **Standalone.** Own data, UI, Compose project, Postgres, and Tailscale hostname. Fully usable without Foodlog.
+- **Private and per user.** Two users from day one, every row scoped per user on the server, identity keyed on the Tailscale login. All data is private in v1.
+- **Offline-first.** Everything needed to run a workout lives on the device. Every tap writes to on-device storage immediately. Sync is opportunistic and never blocks logging.
+- **History never silently changes.** Starting a workout snapshots the routine. Editing a finished workout is explicit and recorded.
+- **Weights never drift.** Store the value and unit the user entered plus a normalized kg value. Default unit lb, per user.
+- **Workout date** uses Foodlog's rule: the user's timezone plus the 4 AM rollover.
+- **Honest numbers.** Estimates are labeled. "No data" is shown as no data, never zero.
+- **Bodyweight and TDEE belong to Foodlog.** Never store bodyweight here, and never send exercise calories to Foodlog's energy math.
 - **No public exposure.** Tailscale only, no open ports, two layers of identity checking.
-- **Honest feedback.** Uncertain or missing data is labeled, never shown as zero.
-- **Fast at the gym.** Mobile first, one hand, big tap targets, few steps per set.
 - **Short, plain UI copy.** Plain American English, no developer text, no em dashes.
 
 ## Stack
 
 - Backend: Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Postgres 17 (`backend/`)
-- Frontend: React 19, TypeScript, Vite, Tailwind (`frontend/app/`)
+- Frontend: React 19, TypeScript, Vite, Tailwind (`frontend/app/`). TanStack Query and ECharts are in the v1 stack and get added with the first spec that needs them. The Android client is a Capacitor shell around this build (from Spec 2); desktop uses the plain web build.
 - Serving: Caddy (static files plus `/api` reverse proxy), Tailscale sidecar with Tailscale Serve for HTTPS
 - Containers (`docker-compose.yml`, project `liftlog`): `tailscale` (hostname `liftlog`, `tag:liftlog`), `web` (Caddy, shares the tailscale network namespace, 127.0.0.1:8080), `backend` (FastAPI :8000), `db` (Postgres, internal network only)
 - Foodlog (`~/foodlog`) is the reference for patterns. Read its code and copy what fits. Never import from it, share code with it, or change it from this repo.

@@ -110,7 +110,9 @@ restic restore latest --tag liftlog --target / --include /home/YOUR_USER/liftlog
 
 ## 5. Spec 2
 
-Spec 2 starts the app itself on top of this infrastructure. The Spec 1 brief deferred these to Spec 2 onward: the Capacitor shell (with CORS for the Capacitor origin in Spec 2), the rest timer, the service worker, offline storage, and Web Push, plus the first real data model. Exercise data and the Hevy importer were also out of Spec 1. `docs/v1-scope.md` is the source of truth for what Spec 2 contains and in what order; read it before starting.
+**Capacitor shell and rest timer prototype** (`docs/v1-scope.md`, build order step 2). Wrap the React build in a Capacitor Android shell, add CORS for the Capacitor origin, and prove the rest timer works before any feature builds on it: it must fire on time with the phone locked, in airplane mode, with a custom sound, on both phones. Trav's phone locks between sets, which is why a pure PWA timer is ruled out. No data model yet; that's Spec 3.
+
+The remaining order: 3 data model, exercise library, and Hevy import; 4 routines; 5 workout card flow, offline storage and sync, plate math, finish and export; 6 history, PRs, charts, body-part volume; 7 measurements and the Foodlog summary API.
 
 ## 6. Known gaps
 
