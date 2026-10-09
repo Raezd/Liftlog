@@ -1,0 +1,14 @@
+{
+  "appId": "io.github.raezd.liftlog",
+  "appName": "Liftlog",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_rest",
+      "iconColor": "#D2792B"
+    }
+  }
+}

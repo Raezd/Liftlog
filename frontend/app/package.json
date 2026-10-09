@@ -9,12 +9,16 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/local-notifications": "8.3.1",
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource/atkinson-hyperlegible": "^5.3.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.2",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

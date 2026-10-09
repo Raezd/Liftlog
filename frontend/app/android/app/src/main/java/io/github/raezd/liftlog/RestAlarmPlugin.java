@@ -1,0 +1,160 @@
+package io.github.raezd.liftlog;
+
+import android.app.AlarmManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.content.Intent;
+import android.media.AudioManager;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.Settings;
+import android.service.notification.StatusBarNotification;
+import com.getcapacitor.JSArray;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import org.json.JSONException;
+
+/**
+ * Rest timer plumbing the local notifications plugin doesn't cover:
+ * path B scheduling with AlarmManager.setAlarmClock (exempt from Doze
+ * deferral and idle rate limits, the way clock apps do it), the channels,
+ * in-app playback, permission status, and when each alert was posted.
+ */
+@CapacitorPlugin(name = "RestAlarm")
+public class RestAlarmPlugin extends Plugin {
+    @Override
+    public void load() {
+        RestAlerts.ensureChannels(getContext());
+        RestAlerts.foreground = true;
+    }
+
+    @Override
+    protected void handleOnResume() {
+        RestAlerts.foreground = true;
+    }
+
+    @Override
+    protected void handleOnPause() {
+        RestAlerts.foreground = false;
+    }
+
+    @PluginMethod
+    public void status(PluginCall call) {
+        Context ctx = getContext();
+        NotificationManager nm = ctx.getSystemService(NotificationManager.class);
+        JSObject r = new JSObject();
+        r.put("notifications", nm.areNotificationsEnabled());
+        r.put("exactAlarms", RestAlerts.canScheduleExact(ctx));
+        r.put("channelOn", channelOn(nm, RestAlerts.CHANNEL_DEFAULT));
+        r.put("alarmChannelOn", channelOn(nm, RestAlerts.CHANNEL_ALARM));
+        int mode = ctx.getSystemService(AudioManager.class).getRingerMode();
+        r.put("ringer", mode == AudioManager.RINGER_MODE_NORMAL ? "normal"
+            : mode == AudioManager.RINGER_MODE_VIBRATE ? "vibrate" : "silent");
+        call.resolve(r);
+    }
+
+    private static boolean channelOn(NotificationManager nm, String id) {
+        NotificationChannel ch = nm.getNotificationChannel(id);
+        return ch != null && ch.getImportance() != NotificationManager.IMPORTANCE_NONE;
+    }
+
+    /** Path B. { id, at (epoch ms), title, body, alarmStream } */
+    @PluginMethod
+    public void schedule(PluginCall call) {
+        Integer id = call.getInt("id");
+        Long at = call.getLong("at");
+        if (id == null || at == null) {
+            call.reject("id and at are required");
+            return;
+        }
+        Context ctx = getContext();
+        boolean alarmStream = Boolean.TRUE.equals(call.getBoolean("alarmStream", false));
+        AlarmManager am = ctx.getSystemService(AlarmManager.class);
+        AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(at, RestAlerts.openApp(ctx));
+        try {
+            am.setAlarmClock(info, RestAlerts.fireIntent(ctx, id,
+                call.getString("title", "Rest is over"), call.getString("body", ""), alarmStream));
+        } catch (SecurityException e) {
+            call.reject("exact alarms not allowed", "NO_EXACT_ALARM");
+            return;
+        }
+        call.resolve();
+    }
+
+    /** Cancels path B alarms and removes any posted notification. { ids: number[] } */
+    @PluginMethod
+    public void cancel(PluginCall call) {
+        Context ctx = getContext();
+        AlarmManager am = ctx.getSystemService(AlarmManager.class);
+        NotificationManager nm = ctx.getSystemService(NotificationManager.class);
+        JSArray ids = call.getArray("ids", new JSArray());
+        try {
+            for (int i = 0; i < ids.length(); i++) {
+                int id = ids.getInt(i);
+                am.cancel(RestAlerts.fireIntent(ctx, id, null, null, false));
+                nm.cancel(id);
+            }
+        } catch (JSONException e) {
+            call.reject("ids must be numbers");
+            return;
+        }
+        call.resolve();
+    }
+
+    /**
+     * Returns whether the app is in front right now. The app uses this to take
+     * over an alert just before it fires, so the phone never plays it twice.
+     */
+    @PluginMethod
+    public void isForeground(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("foreground", RestAlerts.foreground);
+        call.resolve(r);
+    }
+
+    /** The alert while the app is open. { alarmStream } */
+    @PluginMethod
+    public void playNow(PluginCall call) {
+        RestAlerts.playInApp(getContext(), Boolean.TRUE.equals(call.getBoolean("alarmStream", false)));
+        call.resolve();
+    }
+
+    /** Notifications showing right now, with the time each was posted. Covers both paths. */
+    @PluginMethod
+    public void delivered(PluginCall call) {
+        NotificationManager nm = getContext().getSystemService(NotificationManager.class);
+        JSArray list = new JSArray();
+        for (StatusBarNotification sbn : nm.getActiveNotifications()) {
+            JSObject o = new JSObject();
+            o.put("id", sbn.getId());
+            o.put("postTime", sbn.getPostTime());
+            list.put(o);
+        }
+        JSObject r = new JSObject();
+        r.put("notifications", list);
+        call.resolve(r);
+    }
+
+    /** { kind: "notifications" | "exactAlarms" | "app" } */
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        Context ctx = getContext();
+        String kind = call.getString("kind", "app");
+        Intent i;
+        if ("notifications".equals(kind)) {
+            i = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.getPackageName());
+        } else if ("exactAlarms".equals(kind) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            i = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + ctx.getPackageName()));
+        } else {
+            i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.getPackageName()));
+        }
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        ctx.startActivity(i);
+        call.resolve();
+    }
+}

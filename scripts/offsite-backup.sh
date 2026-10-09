@@ -22,6 +22,9 @@ MOUNT="/mnt/storage"
 # Override only to test the alert, for example MOUNT_CHECK=/nonexistent.
 MOUNT_CHECK="${MOUNT_CHECK:-$MOUNT}"
 DUMPS="$MOUNT/backups/liftlog"
+# The Android release keystore and its password (scripts/android-keystore.sh).
+# Without them, app updates need an uninstall that wipes the phone's data.
+SIGNING_DIR="${LIFTLOG_SIGNING_DIR:-$(dirname "$LIFTLOG_DIR")/.liftlog-signing}"
 
 # Read only the webhook from .env rather than sourcing the whole file.
 WEBHOOK="$(grep -E '^DISCORD_WEBHOOK_URL=' "$LIFTLOG_DIR/.env" | cut -d= -f2- || true)"
@@ -76,6 +79,8 @@ PATHS=(
   # The liftlog node's Tailscale identity. Restoring it brings back the same
   # device, Serve URL, and device share instead of a re-register.
   "$LIFTLOG_DIR/data/tailscale"
+  "$SIGNING_DIR/liftlog-release.p12"
+  "$SIGNING_DIR/keystore-password"
 )
 for p in "${PATHS[@]}"; do
   [ -e "$p" ] || fail "expected path is missing: $p"

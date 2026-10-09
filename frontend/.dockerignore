@@ -1,2 +1,4 @@
 app/node_modules
 app/dist
+# The Android project is built by scripts/android-build.sh, not the web image.
+app/android

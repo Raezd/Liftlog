@@ -69,6 +69,10 @@ services:
         condition: service_healthy
     # Both networks are internal: the backend can reach Caddy and the
     # database, and has no route to the internet.
+    # The signed Android app, served at /api/app/ behind the auth middleware.
+    # scripts/android-publish.sh puts it here.
+    volumes:
+      - ./data/apk:/apk:ro
     networks: [app, db]
     read_only: true
     tmpfs: [/tmp]
