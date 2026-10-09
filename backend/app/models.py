@@ -170,6 +170,9 @@ class Workout(Base):
     import_key: Mapped[str | None] = mapped_column(Text)
     # SHA-256 of the workout's rows as imported, to tell a re-import from a changed workout.
     import_hash: Mapped[str | None] = mapped_column(Text)
+    # The routine version this workout started from (Spec 5). Null for imports.
+    routine_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("routine_versions.id", ondelete="RESTRICT"))
     created_at: Mapped[dt.datetime] = _created()
     exercises: Mapped[list[WorkoutExercise]] = relationship(
         order_by="WorkoutExercise.position", cascade="all, delete-orphan")
@@ -248,3 +251,117 @@ class WorkoutChange(Base):
     before: Mapped[dict] = mapped_column(JSONB, nullable=False)
     after: Mapped[dict] = mapped_column(JSONB, nullable=False)
     __table_args__ = (Index("ix_workout_changes_workout", "workout_id", "changed_at"),)
+
+
+SET_TYPE_CHECK = "set_type IN ('normal', 'warmup', 'drop', 'failure')"
+
+
+class RoutineFolder(Base):
+    """A program, like "Upper/Lower". Holds routines (days) in a user-set order."""
+    __tablename__ = "routine_folders"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[dt.datetime] = _created()
+    __table_args__ = (
+        CheckConstraint("btrim(name) <> ''", name="ck_routine_folders_name"),
+        Index("ix_routine_folders_user", "user_id", "position"),
+    )
+
+
+class Routine(Base):
+    """One day, like "Day 4: Deadlift", in a folder or on its own. Its content
+    lives in immutable versions; current_version_id points at the latest."""
+    __tablename__ = "routines"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("routine_folders.id", ondelete="RESTRICT"))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    current_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("routine_versions.id", name="fk_routines_current_version", use_alter=True))
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[dt.datetime] = _created()
+    __table_args__ = (
+        CheckConstraint("btrim(name) <> ''", name="ck_routines_name"),
+        Index("ix_routines_user", "user_id", "folder_id", "position"),
+    )
+
+
+class RoutineVersion(Base):
+    """Immutable once written (a trigger rejects updates, here and on its
+    exercises and sets). Every save makes a new one."""
+    __tablename__ = "routine_versions"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    routine_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("routines.id", ondelete="CASCADE"), nullable=False)
+    # 1, 2, 3... per routine, for display.
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The version this one was edited from. A save whose parent isn't current is a conflict.
+    parent_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("routine_versions.id"))
+    # Superset group (as a string) -> rest seconds after each round.
+    superset_rests: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[dt.datetime] = _created()
+    exercises: Mapped[list[RoutineExercise]] = relationship(
+        order_by="RoutineExercise.position", cascade="all, delete-orphan", passive_deletes=True)
+    __table_args__ = (UniqueConstraint("routine_id", "number", name="uq_routine_versions_number"),)
+
+
+class RoutineExercise(Base):
+    __tablename__ = "routine_exercises"
+    id: Mapped[uuid.UUID] = _id()
+    version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("routine_versions.id", ondelete="CASCADE"), nullable=False)
+    exercise_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_exercises.id"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Up to three adjacent exercises share a group. Numbered 0, 1, 2... per version.
+    superset_group: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    rest_seconds: Mapped[int | None] = mapped_column(Integer)
+    sets: Mapped[list[RoutineSet]] = relationship(
+        order_by="RoutineSet.position", cascade="all, delete-orphan", passive_deletes=True)
+    __table_args__ = (
+        UniqueConstraint("version_id", "position", name="uq_routine_exercises_position"),
+        CheckConstraint("rest_seconds IS NULL OR rest_seconds BETWEEN 0 AND 3600", name="ck_routine_exercises_rest"),
+        Index("ix_routine_exercises_exercise", "exercise_id"),
+    )
+
+
+class RoutineSet(Base):
+    """Per-set targets. Every target is optional. Reps are a range; a fixed
+    number has reps_min = reps_max."""
+    __tablename__ = "routine_sets"
+    id: Mapped[uuid.UUID] = _id()
+    routine_exercise_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("routine_exercises.id", ondelete="CASCADE"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    set_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="normal")
+    reps_min: Mapped[int | None] = mapped_column(Integer)
+    reps_max: Mapped[int | None] = mapped_column(Integer)
+    weight_value: Mapped[Decimal | None] = mapped_column(Numeric)
+    weight_unit: Mapped[str | None] = mapped_column(Text)
+    weight_kg: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
+    rpe: Mapped[Decimal | None] = mapped_column(Numeric(3, 1))
+    duration_seconds: Mapped[int | None] = mapped_column(Integer)
+    distance_value: Mapped[Decimal | None] = mapped_column(Numeric)
+    distance_unit: Mapped[str | None] = mapped_column(Text)
+    distance_m: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    __table_args__ = (
+        UniqueConstraint("routine_exercise_id", "position", name="uq_routine_sets_position"),
+        CheckConstraint(SET_TYPE_CHECK, name="ck_routine_sets_type"),
+        CheckConstraint("(reps_min IS NULL AND reps_max IS NULL) OR (reps_min >= 0 AND reps_max >= reps_min)",
+                        name="ck_routine_sets_reps"),
+        CheckConstraint(
+            "(weight_value IS NULL AND weight_unit IS NULL AND weight_kg IS NULL) OR "
+            "(weight_value >= 0 AND weight_unit IN ('lb', 'kg') AND weight_kg IS NOT NULL)",
+            name="ck_routine_sets_weight"),
+        CheckConstraint(
+            "(distance_value IS NULL AND distance_unit IS NULL AND distance_m IS NULL) OR "
+            "(distance_value >= 0 AND distance_unit IN ('mi', 'km', 'm') AND distance_m IS NOT NULL)",
+            name="ck_routine_sets_distance"),
+        CheckConstraint("duration_seconds IS NULL OR duration_seconds >= 0", name="ck_routine_sets_duration"),
+        CheckConstraint("rpe IS NULL OR (rpe BETWEEN 6 AND 10 AND rpe * 2 = trunc(rpe * 2))",
+                        name="ck_routine_sets_rpe"),
+    )
