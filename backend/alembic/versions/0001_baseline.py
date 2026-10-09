@@ -1,4 +1,4 @@
-"""Empty baseline. The first real tables arrive with Spec 2.
+"""Empty baseline. The first real tables arrive in 0002 (Spec 3).
 
 Revision ID: 0001
 Revises:

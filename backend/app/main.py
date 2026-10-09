@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.datastructures import Headers
@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import require_identity
 from app.db import get_sessionmaker
+from app.routers import exercises, imports, me, workouts
 
 # Interactive API docs at /api/docs. Like every route, behind the auth middleware.
 app = FastAPI(title="Liftlog", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
@@ -53,10 +54,8 @@ def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "database": "ok"})
 
 
-@app.get("/api/me")
-def me(request: Request) -> dict:
-    """The caller's Tailscale login, as checked by the auth middleware."""
-    return {"login": request.state.login}
+for r in (me.router, exercises.router, workouts.router, imports.router):
+    app.include_router(r)
 
 
 # The signed Android app, published by scripts/android-publish.sh into

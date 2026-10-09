@@ -1,16 +1,6 @@
-import os
-
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
-
-SECRET = os.environ["PROXY_SECRET"]
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
+from conftest import SECRET
 
 
 def test_missing_proxy_secret_rejected(client):
@@ -31,17 +21,17 @@ def test_unlisted_login_rejected(client):
 
 
 @pytest.mark.parametrize("login", ["trav@example.com", "Partner@Example.com"])
-def test_allowed_login_accepted(client, login):
+def test_allowed_login_accepted(client, db, login):
     r = client.get("/api/me", headers={"X-Liftlog-Proxy": SECRET, "Tailscale-User-Login": login})
     assert r.status_code == 200
-    assert r.json() == {"login": login.lower()}
+    assert r.json()["login"] == login.lower()
 
 
 # CORS: only the Android app's origin (https://localhost) gets CORS headers.
 OK = {"X-Liftlog-Proxy": SECRET, "Tailscale-User-Login": "trav@example.com"}
 
 
-def test_cors_allows_app_origin(client):
+def test_cors_allows_app_origin(client, db):
     r = client.get("/api/me", headers={**OK, "Origin": "https://localhost"})
     assert r.status_code == 200
     assert r.headers["access-control-allow-origin"] == "https://localhost"
@@ -49,7 +39,7 @@ def test_cors_allows_app_origin(client):
 
 @pytest.mark.parametrize("origin", ["https://evil.example", "http://localhost",
                                     "https://localhost:8443", "null"])
-def test_cors_other_origin_gets_no_headers(client, origin):
+def test_cors_other_origin_gets_no_headers(client, db, origin):
     r = client.get("/api/me", headers={**OK, "Origin": origin})
     assert not [h for h in r.headers if h.lower().startswith("access-control-")]
 

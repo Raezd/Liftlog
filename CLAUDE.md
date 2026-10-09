@@ -20,7 +20,7 @@ From `docs/v1-scope.md`, which wins if the two ever disagree:
 ## Stack
 
 - Backend: Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Postgres 17 (`backend/`)
-- Frontend: React 19, TypeScript, Vite, Tailwind (`frontend/app/`). TanStack Query and ECharts are in the v1 stack and get added with the first spec that needs them. The Android client is a Capacitor shell around this build (from Spec 2); desktop uses the plain web build.
+- Frontend: React 19, TypeScript, Vite, Tailwind, TanStack Query, React Router, lucide-react icons (`frontend/app/`). ECharts is in the v1 stack and gets added with Spec 6. The Android client is a Capacitor shell around this build (from Spec 2); desktop uses the plain web build.
 - Serving: Caddy (static files plus `/api` reverse proxy), Tailscale sidecar with Tailscale Serve for HTTPS
 - Containers (`docker-compose.yml`, project `liftlog`): `tailscale` (hostname `liftlog`, `tag:liftlog`), `web` (Caddy, shares the tailscale network namespace, 127.0.0.1:8080), `backend` (FastAPI :8000), `db` (Postgres, internal network only)
 - Foodlog (`~/foodlog`) is the reference for patterns. Read its code and copy what fits. Never import from it, share code with it, or change it from this repo.
@@ -32,7 +32,38 @@ From `docs/v1-scope.md`, which wins if the two ever disagree:
 3. **The backend and database have no internet.** Both sit on internal networks; only the Tailscale container has a route out.
 4. **Secrets live in `.env`** (chmod 600, gitignored). Never commit `.env`, `data/`, or anything under `data/`. Never print secret values in output. Every variable is listed, without values, in `.env.example`. Off-site backup credentials are root-only files in `/etc/restic`: never read or print anything there, and never ask for key values; Trav handles those himself.
 5. **No new external service or outbound dependency without Trav's approval first.** That includes CDNs, APIs, analytics, fonts, and anything the backend or browser would call out to. Fonts and assets are self-hosted.
-6. **Every schema change is an Alembic migration** in `backend/alembic/versions/`, numbered sequentially (`0001` is the empty baseline; next is `0002`). Migrations must upgrade and downgrade cleanly.
+6. **Every schema change is an Alembic migration** in `backend/alembic/versions/`, numbered sequentially (`0004` is the latest; next is `0005`). Migrations must upgrade and downgrade cleanly. Deploy with `scripts/deploy.sh`, which takes a pg_dump before the backend starts and migrates.
+7. **Every query on user data is scoped to the caller.** Get the user with the `CurrentUser` dependency (`app/users.py`) and filter on `user_id`, or load by id with `owned()`. Another user's object answers **404, never 403**, so ids never reveal what exists. User B getting 404 on user A's exercises, workouts, and imports is tested (`tests/test_data.py`); extend that test when adding a new kind of user object.
+
+## Data model
+
+Primary keys are UUIDv7 (`models.uuid7()`). Clients may send their own ids (offline sync, Spec 5); the API accepts any UUIDv7, returns the existing row if it's already the caller's, and answers 409 if it belongs to someone else. The server makes ids for imports.
+
+| Table | What |
+|---|---|
+| `catalog_exercises` | free-exercise-db, pinned commit, loaded by `0002` from `backend/app/seed/free-exercise-db/` (see `SOURCE.md` there; Unlicense). Read-only by trigger. Dataset muscle words unchanged. |
+| `muscles` | The vocabulary: the dataset's muscle groups (spaces become underscores, `middle back` is `middle_back`), with `shoulders` replaced by `front_delts`, `side_delts`, `rear_delts`. |
+| `users` | One per Tailscale login, made on the first request. Display name, timezone (default America/Los_Angeles), weight unit (lb), distance unit (mi), `play_through_silent` (off). |
+| `user_exercises` | A user's own exercises: a copy of a catalog entry (`catalog_id`) made the first time it's added or imported, or custom (no `catalog_id`). Name unique per user, case-insensitive. Equipment, logging type, primary and secondary muscle arrays (checked against `muscles` in `app/library.py`), `needs_review`, `archived`. |
+| `muscle_map_changes` | Every muscle edit: when, old map, new map. Reports always compute from the current map. |
+| `workouts` | Title, `started_at`/`ended_at` (timestamptz), `workout_date` (stored at save, `app/dates.py`: user's timezone, 4 AM rollover), notes, `source` (`liftlog` or `hevy_import`), `import_id`, and for imports `import_key` (unique per user) and `import_hash`. |
+| `workout_exercises` | Position, `superset_group`, notes, `logged_name` (the name then; display uses the exercise's current name). |
+| `sets` | Position, `set_type` (normal, warmup, drop, failure), weight as entered (`weight_value`, exact numeric) plus `weight_unit` plus `weight_kg`, reps, RPE (6 to 10 in half steps), duration, distance as entered plus `distance_m`, `completed_at` (null for imports). For assisted bodyweight, weight is the assistance. |
+| `workout_changes` | The record for edits to finished workouts (before, after, reason). Finished workouts are never updated in place; edit endpoints don't exist yet. |
+| `imports` | One per import run: file SHA-256, time, workouts and sets added, skipped, conflicting. The CSV itself is never stored. |
+| `hevy_title_mappings` | A Hevy exercise title resolved to one of the user's exercises, so later imports don't ask again. |
+
+Copying a catalog exercise tagged shoulders turns shoulders into the delts its name suggests (`catalog.suggest_delts`: rear delt, reverse fly, face pull are rear; lateral or side raise is side; press and front raise are front) and sets `needs_review`. Saving the muscles (library edit, or "these delts are right" on the import screen) clears it.
+
+## Hevy import
+
+`app/hevy.py`, routes in `app/routers/imports.py`, page `src/pages/Import.tsx`. Parsing is adapted from Foodlog's importer (copied, not shared).
+
+1. **Preview** (`POST /api/imports/hevy/preview`, the file): parses every row (any unreadable row rejects the whole file), detects lb or kg and mi or km from the column names, reads Hevy's zoneless times as the user's local time, groups each run of rows for the same exercise into one workout exercise, and classifies each workout by its key (start time to the minute plus title): new, skipped (key exists, same content hash), or conflicting (key exists, different content; never overwritten). It lists every exercise title in the new workouts that has no saved mapping, with the top three catalog matches and similar exercises of the user's.
+2. **Review**: per title, accept a match, search the catalog, merge into an existing exercise, or make a custom one; confirm delts for shoulder exercises.
+3. **Import** (`POST /api/imports/hevy`, the file again plus the choices): refuses with 422 and writes nothing unless every title is resolved, then creates the exercises, saves the title mappings, writes the import record and every new workout, and commits it all in one transaction.
+
+Mapping: `superset_id` to superset group, `set_type` to ours (`dropset` to `drop`), `rpe`, `exercise_notes` (Hevy's literal `\n` becomes a line break), workout `description` to notes.
 
 ## RAM budget
 
@@ -63,7 +94,7 @@ The box is tight. Memory limits are in `docker-compose.yml`: db 256 MB, backend 
 ## Workflow
 
 - **One spec per session.** Each session implements exactly one spec, end to end: build, test, commit, deploy, update `HANDOFF.md`. Don't start the next spec or slip in unrelated work. If something out of scope comes up, note it in `HANDOFF.md` and ask.
-- **Minimal testing.** Test what would hurt if it broke silently: auth, privacy, and data integrity rules. Don't write tests for layout, copy, or simple CRUD. Run the backend tests and the frontend build before every commit.
+- **Minimal testing.** Test what would hurt if it broke silently: auth, privacy, and data integrity rules (today: auth and CORS, the 4 AM workout date with DST, user isolation, import dedupe and atomicity, exact weights, set type mapping, the muscle-map log). Don't write tests for layout, copy, or simple CRUD. Run the backend tests and the frontend build before every commit.
 - **Ask Trav before:** anything touching auth or networking, deleting data, raising memory limits, or adding an external service or outbound dependency.
 
 ## Commands
@@ -71,14 +102,11 @@ The box is tight. Memory limits are in `docker-compose.yml`: db 256 MB, backend 
 All from the repo root (`~/liftlog`).
 
 ```bash
-# Deploy (migrations run automatically on backend start). Dump first once there's data.
-BUILD_ID=$(git rev-parse --short HEAD) docker compose up -d --build
-docker compose ps                       # backend should be "healthy"
-docker stats --no-stream $(docker compose ps -q)
+# Deploy: clean tree, build, verified pg_dump, then start (migrations run on backend start).
+scripts/deploy.sh
 
-# Backend tests (auth only today, no database needed). Tests aren't in the image.
-docker run --rm -v "$PWD/backend":/src -w /src -e PYTHONPATH=/src -e PYTHONDONTWRITEBYTECODE=1 python:3.12-slim \
-  sh -c 'pip install -q --root-user-action=ignore -r requirements-dev.txt && pytest -q -p no:cacheprovider'
+# Backend tests, against a throwaway Postgres on an internal network (never the live one).
+scripts/test-backend.sh
 
 # Frontend build check. Node isn't installed on the host.
 cd frontend/app && docker run --rm -v "$PWD":/src:ro node:22-alpine sh -c \

@@ -1,0 +1,9 @@
+"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_miles","duration_seconds","rpe"
+"Push","3 Oct 2026, 17:00","3 Oct 2026, 18:05","Felt strong","Bench Press (Barbell)",,"Pause reps",0,"warmup",95,8,,,
+"Push","3 Oct 2026, 17:00","3 Oct 2026, 18:05","Felt strong","Bench Press (Barbell)",,"Pause reps",1,"normal",137.5,5,,,8.5
+"Push","3 Oct 2026, 17:00","3 Oct 2026, 18:05","Felt strong","Bench Press (Barbell)",,"Pause reps",2,"failure",137.5,4,,,10
+"Push","3 Oct 2026, 17:00","3 Oct 2026, 18:05","Felt strong","Lateral Raise (Dumbbell)",0,"",0,"normal",20,12,,,
+"Push","3 Oct 2026, 17:00","3 Oct 2026, 18:05","Felt strong","Lateral Raise (Dumbbell)",0,"",1,"dropset",10,10,,,
+"Push","3 Oct 2026, 17:00","3 Oct 2026, 18:05","Felt strong","Triceps Extension (Machine)",0,"",0,"normal",50,15,,,
+"Push","3 Oct 2026, 17:00","3 Oct 2026, 18:05","Felt strong","Treadmill",,"",0,"normal",,,1.06,1200,
+"Late night","5 Oct 2026, 01:30","5 Oct 2026, 02:00","","Champagnes",,"Line one\nline two",0,"normal",,20,,,
