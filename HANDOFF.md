@@ -258,13 +258,24 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 
 ## 8. Spec 4 fixes
 
-**Status:** built and tested; deploy details below.
+**Status:** deployed as `266ac73` on October 9, 2026, and Android `16-266ac73` (same commit) published to /download. Waiting on Trav's checks (table below).
+
+- **Deploy:** `predeploy/liftlog-20261009-232010-before-266ac73.dump` was written before `0006` ran. "Lower A" went from 7 versions to 1. Memory after: backend 65 MiB, db 23 MiB, tailscale 30 MiB, web 13 MiB.
 
 - **Superset moves** (`src/lib/reorder.ts`, rules in `CLAUDE.md`): moving an exercise within its superset keeps it there; past the first or last exercise takes it out; a lone exercise skips past a whole superset instead of landing inside it; a superset moves as one unit from its header. Works by drag and by buttons in reorder mode (`components/ExerciseOrder.tsx`, with a line showing where it will land and "In superset A" or "Not in a superset" on the dragged row), and by the buttons on each card (the first card of a superset has the group's buttons). Every move is announced.
 - **Save as routine** still saves immediately, then opens the new routine's view page (`/routines/{id}`, read-only, Edit button) with "Saved as a routine in {folder}." The editor moved to `/routines/{id}/edit`. Tapping a routine on the Routines page now opens the view page too; Edit is on it and in the routine's options.
 - **Focus:** one ring on every control, a 2px outline in `--accent-text` from the base-layer rule in `styles.css`. The old rule was outside Tailwind's layers, so it beat `outline-none` and doubled the editor's wrapper ring; it also forced a 4px corner on rounded inputs, and its color (`--accent`) was only 2.65:1 on the light background. Now 4.15:1 or better on every background in both themes.
 - **Version pruning** (`0006`): `parent_version_id` lost its foreign key and keeps its value. Every non-current version that no workout references was deleted once. A save now deletes the version it replaced in the same transaction, unless a workout references it. The conflict check runs first, unchanged. `workouts.routine_version_id` (RESTRICT) was already added by `0005` in Spec 4, so `0006` didn't add it again. Delete-only-if-unused already used that column. `0006` downgrades (the foreign key comes back as NOT VALID; pruned versions don't come back).
 - **Tests:** 46 backend, 11 frontend. New or rewritten for this: `test_saving_prunes_the_previous_version_when_no_workout_used_it`, `test_stale_save_is_a_conflict_even_when_its_parent_was_pruned`, `test_a_version_a_workout_used_survives_saves_and_postgres_wont_delete_it`, `test_used_routines_and_folders_only_archive_and_postgres_refuses_deletes`, and five superset move tests in `tests/reorder.test.ts`. A one-off check (not kept) ran `0006` on a routine with 7 versions, one used by a workout: the current one and the used one remained, with their exercises, and it downgraded and upgraded cleanly.
+
+| Check | Result |
+|---|---|
+| Save as routine shows the confirmation and opens the view page | pending (Trav) |
+| One focus ring on each input, desktop and both phones | pending (Trav) |
+| Superset swap, move out past an edge, move whole superset, by drag and buttons, desktop and both phones | rules unit-tested; pending on devices (Trav) |
+| Lower A shows one version after the migration; more edits still leave one | 1 after migration (checked in the database); further edits covered by a test, pending on the page |
+| Web and APK report the same commit; both phones on the new APK | both `266ac73`; phones pending |
+| Tests pass; dump before migration; memory under limits | 46 backend, 11 frontend; done |
 
 ## 9. Known gaps
 
