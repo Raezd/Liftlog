@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cancelAlerts, type Path, RestAlarm, scheduleAlert } from "./restAlarm";
+import { cancelAlerts, RestAlarm, scheduleAlert } from "./restAlarm";
 
 /**
  * scheduled: the phone will alert at endsAt
@@ -11,7 +11,7 @@ import { cancelAlerts, type Path, RestAlarm, scheduleAlert } from "./restAlarm";
  */
 export type AlertStatus = "scheduled" | "app" | "fired" | "played" | "done" | "cancelled";
 export type Alert = { id: number; endsAt: number; label: string; status: AlertStatus; firedAt?: number };
-export type Run = { path: Path; alarmStream: boolean; alerts: Alert[] };
+export type Run = { alarmStream: boolean; alerts: Alert[] };
 
 const RUN_KEY = "liftlog.timerTest.run";
 const ID_KEY = "liftlog.timerTest.nextId";
@@ -59,7 +59,7 @@ export function useRestTimer() {
     save({ ...cur, alerts: cur.alerts.map((a) => (a.id === id && (!only || only(a)) ? { ...a, ...change } : a)) });
   }, [save]);
 
-  const start = useCallback(async (plan: Plan, path: Path, alarmStream: boolean) => {
+  const start = useCallback(async (plan: Plan, alarmStream: boolean) => {
     setError(null);
     const old = runRef.current;
     if (old) await cancelAlerts(old.alerts.filter(pending).map((a) => a.id));
@@ -68,13 +68,13 @@ export function useRestTimer() {
     const alerts: Alert[] = plan.map((p, i) => ({
       id: ids[i], endsAt: now + p.secondsFromNow * 1000, label: p.label, status: "scheduled",
     }));
-    save({ path, alarmStream, alerts });
+    save({ alarmStream, alerts });
     try {
-      for (const a of alerts) await scheduleAlert(path, a.id, a.endsAt, a.label, alarmStream);
+      for (const a of alerts) await scheduleAlert(a.id, a.endsAt, a.label, alarmStream);
     } catch {
       setError("The timer couldn't be set. Check the permissions above.");
       await cancelAlerts(ids);
-      save({ path, alarmStream, alerts: alerts.map((a) => ({ ...a, status: "cancelled" })) });
+      save({ alarmStream, alerts: alerts.map((a) => ({ ...a, status: "cancelled" })) });
     }
   }, [save]);
 
@@ -130,7 +130,7 @@ export function useRestTimer() {
       if (!cur) return;
       for (const a of cur.alerts.filter((x) => x.status === "app")) {
         patch(a.id, { status: "scheduled" });
-        await scheduleAlert(cur.path, a.id, Math.max(a.endsAt, Date.now() + 100), a.label, cur.alarmStream);
+        await scheduleAlert(a.id, Math.max(a.endsAt, Date.now() + 100), a.label, cur.alarmStream);
       }
     };
     document.addEventListener("visibilitychange", onHide);

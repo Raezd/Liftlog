@@ -2,14 +2,14 @@ import { registerPlugin } from "@capacitor/core";
 import { LocalNotifications } from "@capacitor/local-notifications";
 
 /**
- * Rest timer scheduling for the Spec 2 prototype. Two paths are under test:
+ * Rest timer scheduling: @capacitor/local-notifications with allowWhileIdle
+ * (AlarmManager.setExactAndAllowWhileIdle under the hood). Chosen in Spec 2
+ * after it passed every test, including forced idle.
  *
- *   A: @capacitor/local-notifications with allowWhileIdle
- *      (AlarmManager.setExactAndAllowWhileIdle under the hood)
- *   B: the app's own RestAlarm plugin, AlarmManager.setAlarmClock
- *      (android/app/src/main/java/.../RestAlarmPlugin.java)
+ * The app's own RestAlarm plugin (RestAlarmPlugin.java) owns the channels and
+ * covers what the notifications plugin doesn't: in-app playback, permission
+ * status, and when each alert was posted.
  *
- * Both post to the same channels, so sound and vibration are identical.
  * Timer state is an absolute end time, never a countdown, so it survives the
  * app being backgrounded or killed.
  */
@@ -24,8 +24,6 @@ export type NativeStatus = {
 
 interface RestAlarmPlugin {
   status(): Promise<NativeStatus>;
-  schedule(o: { id: number; at: number; title: string; body: string; alarmStream: boolean }): Promise<void>;
-  cancel(o: { ids: number[] }): Promise<void>;
   isForeground(): Promise<{ foreground: boolean }>;
   playNow(o: { alarmStream: boolean }): Promise<void>;
   delivered(): Promise<{ notifications: { id: number; postTime: number }[] }>;
@@ -34,37 +32,32 @@ interface RestAlarmPlugin {
 
 export const RestAlarm = registerPlugin<RestAlarmPlugin>("RestAlarm");
 
-export type Path = "A" | "B";
-
-/** Channel ids match RestAlerts.java. A new sound needs a new id (-v2). */
+/**
+ * Channel ids match RestAlerts.java. A new sound needs a new id (-v2).
+ * Default follows the ringer; the per-user "play through silent mode"
+ * setting switches to the alarm channel.
+ */
 const channelFor = (alarmStream: boolean) => (alarmStream ? "rest-timer-alarm-v1" : "rest-timer-v1");
 
 const TITLE = "Rest is over";
 
-export async function scheduleAlert(path: Path, id: number, endsAt: number, body: string, alarmStream: boolean) {
-  if (path === "A") {
-    await LocalNotifications.schedule({
-      notifications: [{
-        id,
-        title: TITLE,
-        body,
-        channelId: channelFor(alarmStream),
-        smallIcon: "ic_stat_rest",
-        schedule: { at: new Date(endsAt), allowWhileIdle: true },
-      }],
-    });
-  } else {
-    await RestAlarm.schedule({ id, at: endsAt, title: TITLE, body, alarmStream });
-  }
+export async function scheduleAlert(id: number, endsAt: number, body: string, alarmStream: boolean) {
+  await LocalNotifications.schedule({
+    notifications: [{
+      id,
+      title: TITLE,
+      body,
+      channelId: channelFor(alarmStream),
+      smallIcon: "ic_stat_rest",
+      schedule: { at: new Date(endsAt), allowWhileIdle: true },
+    }],
+  });
 }
 
-/** Cancels pending alerts on both paths, whichever one scheduled them. */
+/** Cancels pending alerts and removes any that are showing. */
 export async function cancelAlerts(ids: number[]) {
   if (!ids.length) return;
-  await Promise.allSettled([
-    LocalNotifications.cancel({ notifications: ids.map((id) => ({ id })) }),
-    RestAlarm.cancel({ ids }),
-  ]);
+  await LocalNotifications.cancel({ notifications: ids.map((id) => ({ id })) }).catch(() => {});
 }
 
 /** Asks for notification permission if Android hasn't asked yet. */

@@ -4,9 +4,7 @@ import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.content.Context;
-import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -17,8 +15,9 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 
 /**
- * Everything the rest alert shares between the two scheduling paths: the
- * notification channels, the notification itself, and in-app playback.
+ * The rest alert's notification channels and in-app playback. The
+ * notification itself is posted by @capacitor/local-notifications on one of
+ * these channels.
  *
  * Android locks a channel's sound and vibration once the channel exists on a
  * phone, so any change to those means a new channel id (rest-timer-v2, ...).
@@ -66,55 +65,9 @@ final class RestAlerts {
         return ch;
     }
 
-    static String channelFor(boolean alarmStream) {
-        return alarmStream ? CHANNEL_ALARM : CHANNEL_DEFAULT;
-    }
-
-    /** Opens the app when the notification is tapped. */
-    static PendingIntent openApp(Context ctx) {
-        Intent i = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
-        if (i == null) i = new Intent(ctx, MainActivity.class);
-        i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        return PendingIntent.getActivity(ctx, 0, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-    }
-
-    /** The broadcast AlarmManager fires for path B. Same id, same PendingIntent, so cancel matches. */
-    static PendingIntent fireIntent(Context ctx, int id, String title, String body, boolean alarmStream) {
-        Intent i = new Intent(ctx, RestAlarmReceiver.class);
-        i.setAction("io.github.raezd.liftlog.REST_ALARM");
-        i.setData(Uri.parse("liftlog-rest://" + id));
-        if (title != null) {
-            i.putExtra("id", id);
-            i.putExtra("title", title);
-            i.putExtra("body", body);
-            i.putExtra("alarmStream", alarmStream);
-        }
-        return PendingIntent.getBroadcast(ctx, id, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-    }
-
     static boolean canScheduleExact(Context ctx) {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.S
             || ctx.getSystemService(AlarmManager.class).canScheduleExactAlarms();
-    }
-
-    static void post(Context ctx, int id, String title, String body, boolean alarmStream) {
-        Notification n = new Notification.Builder(ctx, channelFor(alarmStream))
-            .setSmallIcon(R.drawable.ic_stat_rest)
-            .setColor(0xFFD2792B)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setCategory(Notification.CATEGORY_ALARM)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setShowWhen(true)
-            .setWhen(System.currentTimeMillis())
-            .setAutoCancel(true)
-            .setContentIntent(openApp(ctx))
-            .build();
-        try {
-            ctx.getSystemService(NotificationManager.class).notify(id, n);
-        } catch (SecurityException ignored) {
-            // Notification permission was turned off. The app shows how to fix it.
-        }
     }
 
     /**

@@ -1,11 +1,14 @@
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { useApi } from "../api";
-import { ensureNotificationPermission, type NativeStatus, type Path, RestAlarm } from "./restAlarm";
+import { Link } from "react-router-dom";
+import { useMe } from "../lib/queries";
+import { lastAlertSetting, rememberAlertSetting } from "./alertSetting";
+import { ensureNotificationPermission, type NativeStatus, RestAlarm } from "./restAlarm";
 import { type Alert, type Plan, useRestTimer } from "./useRestTimer";
 
 /**
  * Temporary test screen for the Spec 2 rest timer prototype. It goes away
- * when the real workout screen is built.
+ * when the real workout screen is built. Alerts use the "play through silent
+ * mode" setting from Settings.
  */
 
 const SINGLES = [10, 60, 90, 180];
@@ -14,19 +17,6 @@ const SEQUENCE: Plan = Array.from({ length: 5 }, (_, i) => ({
   label: `Rest ${i + 1} of 5`,
   secondsFromNow: 150 + i * 180,
 }));
-const SETTINGS_KEY = "liftlog.timerTest.settings";
-
-type Me = { login: string };
-
-function loadSettings(): { path: Path; alarmStream: boolean } {
-  try {
-    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "");
-    return { path: s.path === "B" ? "B" : "A", alarmStream: !!s.alarmStream };
-  } catch {
-    return { path: "A", alarmStream: false };
-  }
-}
-
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
 
@@ -72,19 +62,20 @@ const primary = `${button} bg-accent-strong text-white`;
 const secondary = `${button} border border-line bg-sunken`;
 
 function Connection() {
-  const [me, reload] = useApi<Me>("/api/me");
-  useOnReturn(reload);
-  const online = me.state === "ok";
+  const me = useMe();
+  const refetch = me.refetch;
+  useOnReturn(useCallback(() => void refetch(), [refetch]));
+  const online = me.isSuccess;
   return (
     <Card title="Server">
       <p className="flex items-center gap-2">
         <span aria-hidden className={`inline-block size-2.5 rounded-full ${online ? "bg-accent" : "bg-over"}`} />
-        {me.state === "loading" ? "Checking..." : online ? `Connected as ${me.data.login}` : me.message}
+        {me.isPending ? "Checking..." : online ? `Connected as ${me.data.login}` : me.error?.message}
       </p>
-      {!online && me.state !== "loading" && (
+      {!online && !me.isPending && (
         <p className="mt-1 text-sm text-muted">That's fine for the timer. It works with no signal.</p>
       )}
-      <button type="button" className={`${secondary} mt-3`} onClick={reload}>Check again</button>
+      <button type="button" className={`${secondary} mt-3`} onClick={() => void refetch()}>Check again</button>
     </Card>
   );
 }
@@ -151,21 +142,20 @@ function describe(a: Alert): string {
 }
 
 export function TimerTest() {
-  const [settings, setSettings] = useState(loadSettings);
+  const me = useMe();
+  const alarmStream = me.data?.play_through_silent ?? lastAlertSetting();
+  useEffect(() => {
+    if (me.data) rememberAlertSetting(me.data.play_through_silent);
+  }, [me.data]);
   const { run, error, start, doneResting, cancel, clear } = useRestTimer();
   const next = run?.alerts.find((a) => a.status === "scheduled" || a.status === "app");
   const now = useNow(!!next);
-
-  const update = (s: Partial<typeof settings>) => {
-    const merged = { ...settings, ...s };
-    setSettings(merged);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
-  };
-  const go = (plan: Plan) => void start(plan, settings.path, settings.alarmStream);
+  const go = (plan: Plan) => void start(plan, alarmStream);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+    <>
       <header className="mb-4">
+        <Link to="/settings" className="mb-1 inline-flex min-h-11 items-center text-muted">Back to settings</Link>
         <h1 className="display text-3xl font-extrabold text-accent-text">Rest timer test</h1>
         <p className="text-sm text-muted">Version {__BUILD_ID__}</p>
       </header>
@@ -201,33 +191,18 @@ export function TimerTest() {
         {error && <p role="alert" className="mt-3 font-bold text-over">{error}</p>}
       </Card>
 
-      <Card title="Test settings">
-        <fieldset disabled={!!next}>
-          <legend className="mb-2 text-muted">How the alert is scheduled</legend>
-          <div className="grid grid-cols-2 gap-2">
-            {(["A", "B"] as const).map((p) => (
-              <label key={p} className={`${secondary} flex items-center justify-center gap-2 ${settings.path === p ? "border-accent ring-2 ring-accent" : ""}`}>
-                <input type="radio" name="path" className="sr-only" checked={settings.path === p} onChange={() => update({ path: p })} />
-                {p === "A" ? "A: notification" : "B: alarm clock"}
-              </label>
-            ))}
-          </div>
-          <label className="mt-4 flex min-h-11 items-center justify-between gap-3">
-            <span>
-              Use alarm sound
-              <span className="block text-sm text-muted">Rings even on vibrate or silent</span>
-            </span>
-            <input type="checkbox" className="size-6 accent-[var(--accent-strong)]" checked={settings.alarmStream}
-              onChange={(e) => update({ alarmStream: e.target.checked })} />
-          </label>
-        </fieldset>
-        {next && <p className="mt-2 text-sm text-muted">Settings apply to the next timer.</p>}
+      <Card title="Alert sound">
+        <p>
+          {alarmStream ? "Plays through silent mode." : "Follows your ringer."}{" "}
+          <Link to="/settings" className="font-bold text-accent-text underline">Change in Settings</Link>
+        </p>
+        {next && <p className="mt-2 text-sm text-muted">A change applies to the next timer.</p>}
       </Card>
 
       {run && (
         <Card title="Results">
           <p className="mb-2 text-sm text-muted">
-            Path {run.path}, {run.alarmStream ? "alarm sound" : "follows ringer"}
+            {run.alarmStream ? "Played through silent mode" : "Followed the ringer"}
           </p>
           <ul className="divide-y divide-line">
             {run.alerts.map((a) => (
@@ -240,6 +215,6 @@ export function TimerTest() {
           {!next && <button type="button" className={`${secondary} mt-3`} onClick={clear}>Clear</button>}
         </Card>
       )}
-    </main>
+    </>
   );
 }

@@ -1,11 +1,12 @@
-import { useApi } from "./api";
+import { useQuery } from "@tanstack/react-query";
+import { type ApiError, get } from "./lib/api";
 
 type Latest = { version_name: string; version_code: number; size: number; built_at: string };
 
 /** /download: the signed Android app, for both phones to install and update from. */
 export function Download() {
-  const [latest] = useApi<Latest>("/api/app/latest");
-  const built = latest.state === "ok" ? new Date(latest.data.built_at).toLocaleDateString(undefined, { dateStyle: "medium" }) : "";
+  const latest = useQuery({ queryKey: ["apk"], queryFn: () => get<Latest>("/api/app/latest"), retry: false });
+  const built = latest.data ? new Date(latest.data.built_at).toLocaleDateString(undefined, { dateStyle: "medium" }) : "";
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
@@ -15,11 +16,11 @@ export function Download() {
       </header>
 
       <section className="rounded-2xl border border-line bg-surface p-4" aria-label="Download">
-        {latest.state === "loading" && <p>Checking...</p>}
-        {latest.state === "error" && (
-          <p>{latest.message === "Error 404" ? "No app has been published yet." : latest.message}</p>
+        {latest.isPending && <p>Checking...</p>}
+        {latest.isError && (
+          <p>{(latest.error as ApiError).status === 404 ? "No app has been published yet." : latest.error.message}</p>
         )}
-        {latest.state === "ok" && (
+        {latest.data && (
           <>
             <p className="num display text-2xl font-bold">Version {latest.data.version_name}</p>
             <p className="text-muted">

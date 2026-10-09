@@ -33,11 +33,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
-
-        <!-- Path B of the rest timer: AlarmManager.setAlarmClock fires this. -->
-        <receiver
-            android:name=".RestAlarmReceiver"
-            android:exported="false" />
     </application>
 
     <!-- Permissions -->
