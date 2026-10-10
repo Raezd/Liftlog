@@ -314,7 +314,7 @@ export function setProblem(s: ActiveSet, f: Fields): string | null {
   return null;
 }
 
-function uploadSet(s: ActiveSet, f: Fields): UploadSet {
+export function uploadSet(s: ActiveSet, f: Fields): UploadSet {
   const weight = f.weight && s.weight.trim() ? s.weight.trim() : null;
   const distance = f.distance && s.distance.trim() ? s.distance.trim() : null;
   return {
@@ -378,13 +378,13 @@ export function summarize(body: UploadBody, logging: Record<string, LoggingType>
 
 /** Groups exercise i with the next one into a superset (on), or splits them
  *  (off). A superset's rest after each round stays on its first exercise. */
-export function linkWithNext(items: ActiveExercise[], i: number, on: boolean): ActiveExercise[] {
+export function linkWithNext<T extends Linked>(items: T[], i: number, on: boolean): T[] {
   const next = items.map((x, j) => (j === i ? { ...x, linkNext: on } : x));
   return units(next).flatMap((u) => u.map((x, j) => ({ ...x, supersetRest: u.length > 1 && j === 0 ? x.supersetRest : null })));
 }
 
 /** Can exercise i join the next one's superset? Up to three in a superset. */
-export function canLink(items: ActiveExercise[], i: number): boolean {
+export function canLink<T extends Linked>(items: T[], i: number): boolean {
   if (i >= items.length - 1 || items[i].linkNext) return false;
   const size = (j: number) => { const g = groupOf(items, j); return g ? g[1] - g[0] + 1 : 1; };
   return size(i) + size(i + 1) <= 3;
@@ -423,8 +423,11 @@ export function tooHeavy(s: Pick<ActiveSet, "weight" | "weight_unit">, top: Heav
   return 2 * exactKg(s.weight.trim(), s.weight_unit) > 3 * top.exact;
 }
 
-/** Every set in the workout with a weight that gets the warning, for the finish screen. */
-export function heavySets(w: ActiveWorkout, hist: HistWorkout[]): { key: string; set: ActiveSet; name: string; label: string; top: Heaviest }[] {
+type HeavyExercise = { key: string; exercise_id: string; name: string; logging_type: LoggingType; sets: ActiveSet[] };
+
+/** Every set in the workout with a weight that gets the warning, for the
+ *  finish screen and the edit's save screen. */
+export function heavySets(w: { exercises: HeavyExercise[] }, hist: HistWorkout[]): { key: string; set: ActiveSet; name: string; label: string; top: Heaviest }[] {
   return w.exercises.flatMap((e) => {
     if (!FIELDS[e.logging_type].weight) return [];
     const top = heaviest(hist, e.exercise_id);

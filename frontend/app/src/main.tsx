@@ -22,6 +22,7 @@ import { RoutineVersionPage, RoutineVersions } from "./pages/RoutineVersions";
 import Settings from "./pages/Settings";
 import Workout from "./pages/Workout";
 import { WorkoutDone, WorkoutFinish } from "./pages/WorkoutFinish";
+import WorkoutEdit from "./pages/WorkoutEdit";
 import WorkoutView from "./pages/WorkoutView";
 import "./styles.css";
 
@@ -89,6 +90,7 @@ const router = createBrowserRouter([{ element: <Root />, children: [
       { path: "/history/muscles", element: later(<MuscleVolume />) },
       { path: "/exercises/:id", element: later(<ExerciseView />) },
       { path: "/workouts/:id", element: <WorkoutView /> },
+      { path: "/workouts/:id/edit", element: <WorkoutEdit /> },
       { path: "/library", element: <Library /> },
       { path: "/library/add", element: <ExerciseAdd /> },
       { path: "/library/:id", element: <ExerciseEdit /> },

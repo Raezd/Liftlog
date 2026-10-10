@@ -310,7 +310,7 @@ export default function RoutineEdit() {
   );
 }
 
-function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
+export function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled}
       className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-sunken disabled:opacity-30">
@@ -475,7 +475,7 @@ function RepsField({ s, name, onChange }: { s: ESet; name: string; onChange: (ne
 }
 
 /** Pick exercises from your library. Stays open so you can add several. */
-function AddExercises({ open, onClose, onAdd, added }: { open: boolean; onClose: () => void; onAdd: (e: Exercise) => void; added: string[] }) {
+export function AddExercises({ open, onClose, onAdd, added }: { open: boolean; onClose: () => void; onAdd: (e: Exercise) => void; added: string[] }) {
   const [q, setQ] = useState("");
   const list = useQuery({
     queryKey: ["exercises", q, false, false],

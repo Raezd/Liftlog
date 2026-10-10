@@ -57,7 +57,7 @@ def _iso(t: dt.datetime | None) -> str | None:
 def load_workouts(session: Session, user: User, workout_id: uuid.UUID | None = None) -> list[tuple[Workout, uuid.UUID | None]]:
     stmt = (select(Workout, RoutineVersion.routine_id)
             .outerjoin(RoutineVersion, RoutineVersion.id == Workout.routine_version_id)
-            .where(Workout.user_id == user.id)
+            .where(Workout.user_id == user.id, Workout.deleted_at.is_(None))
             .options(selectinload(Workout.exercises).selectinload(WorkoutExercise.sets))
             .order_by(Workout.started_at.desc()))
     if workout_id is not None:

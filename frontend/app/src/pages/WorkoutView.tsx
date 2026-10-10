@@ -1,19 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListPlus, Star } from "lucide-react";
+import { ListPlus, Pencil, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ExportLinks } from "../components/ExportLinks";
 import { Sheet } from "../components/Sheet";
-import { Badge, Button, ErrorText, Loading, Page, SelectField, TextField } from "../components/ui";
+import { Badge, Button, ErrorText, Loading, Page, SelectField, TextField, btn } from "../components/ui";
 import { get, send } from "../lib/api";
 import { uuid7 } from "../lib/ids";
 import { clockTime, longDate, minutes } from "../lib/format";
-import { cached, useOffline } from "../lib/offline";
+import { cached, deletedWorkout, useOffline } from "../lib/offline";
 import { useMe } from "../lib/queries";
 import type { Queued } from "../lib/session";
 import { workoutDate, type RecordType } from "../lib/stats";
 import type { OfflineCopy, RoutineDetail, WorkoutDetail } from "../lib/types";
+import { useOnline } from "../lib/useOnline";
 import { RECORD_TAG, setText, useStats } from "../lib/useStats";
+import { EditedBadge } from "./History";
 import { useRoutineList } from "./Routines";
 import { SetRows } from "./RoutineVersions";
 import type { SavedState } from "./RoutineView";
@@ -60,6 +62,21 @@ export default function WorkoutView() {
   const w = queued && !uploaded ? fromQueue(queued, off.copy, tz) : q.data;
   const onPhone = !!queued && !uploaded;
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const online = useOnline();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const remove = useMutation({
+    mutationFn: () => send<void>("DELETE", `/api/workouts/${id}`),
+    onSuccess: async () => {
+      setDeleting(false);
+      await deletedWorkout(id!);
+      navigate("/history", { replace: true });
+      qc.removeQueries({ queryKey: ["workout", id] });
+      void qc.invalidateQueries({ queryKey: ["workouts"] });
+      void qc.invalidateQueries({ queryKey: ["versions"] });
+    },
+  });
 
   // Records this workout set when it was logged: set id -> types, and session volume per exercise.
   const prs = (stats?.records.byWorkout.get(id ?? "") ?? []);
@@ -78,6 +95,7 @@ export default function WorkoutView() {
             {longDate(w.workout_date)}, {clockTime(w.started_at, tz)}
             {minutes(w.started_at, w.ended_at) && `, ${minutes(w.started_at, w.ended_at)}`}
             {w.source === "hevy_import" && <> <Badge tone="muted">Imported from Hevy</Badge></>}
+            {w.edited_at && <> <EditedBadge at={w.edited_at} /></>}
           </p>
           {queued && !uploaded && (
             <p className="mb-2"><Badge>{queued.error === null ? "Waiting to upload" : "Needs attention"}</Badge></p>
@@ -118,13 +136,35 @@ export default function WorkoutView() {
             <p className="mt-4 rounded-2xl bg-sunken p-3">Save as routine and export work once this workout uploads.</p>
           ) : (
             <>
-              <Button className="mt-4 w-full" onClick={() => setSaving(true)}><ListPlus size={20} aria-hidden /> Save as routine</Button>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {online ? (
+                  <Link to={`/workouts/${w.id}/edit`} className={btn.secondary}><Pencil size={18} aria-hidden /> Edit</Link>
+                ) : (
+                  <Button disabled aria-describedby="needs-connection"><Pencil size={18} aria-hidden /> Edit</Button>
+                )}
+                <Button disabled={!online} aria-describedby={online ? undefined : "needs-connection"} onClick={() => { remove.reset(); setDeleting(true); }}>
+                  <Trash2 size={18} aria-hidden /> Delete
+                </Button>
+              </div>
+              {!online && <p id="needs-connection" className="mt-1 text-sm text-muted">Editing and deleting need a connection.</p>}
+              <Button className="mt-2 w-full" onClick={() => setSaving(true)}><ListPlus size={20} aria-hidden /> Save as routine</Button>
               <section aria-label="Export this workout" className="mt-6">
                 <h2 className="display mb-2 text-lg font-bold">Export this workout</h2>
                 <ExportLinks path={`/api/workouts/${w.id}/export`} page={`/workouts/${w.id}`} what="this workout" />
               </section>
               <Sheet open={saving} title="Save as routine" onClose={() => setSaving(false)}>
                 {saving && <SaveAsRoutine workout={w} />}
+              </Sheet>
+              <Sheet open={deleting} title="Delete this workout?" onClose={() => setDeleting(false)}>
+                <p className="mb-4">It will disappear from your history, records, and exports, on every device. This can't be undone.</p>
+                <ErrorText error={remove.error} />
+                {!online && <p className="mb-3 font-bold text-over">Deleting needs a connection.</p>}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button onClick={() => setDeleting(false)}>Keep it</Button>
+                  <Button variant="primary" disabled={!online || remove.isPending} onClick={() => remove.mutate()}>
+                    {remove.isPending ? "Deleting..." : "Delete"}
+                  </Button>
+                </div>
               </Sheet>
             </>
           )}

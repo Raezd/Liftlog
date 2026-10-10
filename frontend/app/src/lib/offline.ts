@@ -16,7 +16,7 @@
 import { useSyncExternalStore } from "react";
 import { ApiError, api, get } from "./api";
 import { read, readAll, write } from "./idb";
-import { loginCheck, unsyncedFor } from "./offlineRules";
+import { loginCheck, unsyncedFor, withWorkout, withoutWorkout } from "./offlineRules";
 import type { ActiveWorkout, Queued } from "./session";
 import { OFFLINE, uploadQueue } from "./uploader";
 import type { Me, OfflineCopy, RoutineDetail, RoutineList, WorkoutDetail } from "./types";
@@ -143,13 +143,35 @@ export function refresh(force = false): Promise<void> {
   return refreshing;
 }
 
-/** Puts a just-uploaded workout into the copy, so prefill sees it before the next refresh. */
-async function remember(w: WorkoutDetail) {
-  const rec = await read<CacheRecord>("cache", "copy");
-  if (!rec || rec.login !== state.copy?.me.login) return;
-  const data = { ...rec.data, workouts: [w, ...rec.data.workouts.filter((x) => x.id !== w.id)] };
-  await write(["cache"], (s) => s.cache.put({ ...rec, data }, "copy"));
-  set({ copy: data });
+/** Changes the stored copy right away, before the next refresh brings the server's. */
+async function changeCopy(change: (c: OfflineCopy) => OfflineCopy) {
+  const rec = await read<CacheRecord>("cache", "copy").catch(() => undefined);
+  if (rec && rec.login === state.copy?.me.login) {
+    const data = change(rec.data);
+    await write(["cache"], (s) => s.cache.put({ ...rec, data }, "copy")).catch(() => {});
+    set({ copy: data });
+  } else if (state.copy) {
+    set({ copy: change(state.copy) });
+  }
+}
+
+/** Puts a just-uploaded or just-edited workout into the copy, so prefill and history see it before the next refresh. */
+const remember = (w: WorkoutDetail) => changeCopy((c) => withWorkout(c, w));
+
+/**
+ * After an edit or a delete on this device: the copy changes now, then
+ * refreshes from the server. Other devices catch up on their next refresh,
+ * which replaces the whole history (edited workouts come back changed,
+ * deleted ones don't come back).
+ */
+export async function savedWorkout(w: WorkoutDetail) {
+  await remember(w);
+  void refresh(true);
+}
+
+export async function deletedWorkout(id: string) {
+  await changeCopy((c) => withoutWorkout(c, id));
+  void refresh(true);
 }
 
 let syncing: Promise<void> | null = null;
@@ -179,6 +201,8 @@ export function syncNow(only?: string): Promise<void> {
       },
       // The server said no. Keep it on the phone, and say why.
       refused: (q, why) => write(["queue"], (s) => s.queue.put({ ...q, error: why } satisfies Queued)),
+      // Uploaded before and deleted since: nothing to fix, so it just goes.
+      gone: (q) => write(["queue"], (s) => s.queue.delete(q.id)),
     }, only);
     // A refusal shows on the workout itself (Needs attention), not here.
     set({ queue: sortQueue(await readAll<Queued>("queue")), problem: problem === OFFLINE ? OFFLINE : null });

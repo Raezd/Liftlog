@@ -80,6 +80,9 @@ export type WorkoutSet = {
 
 export type WorkoutDetail = Omit<WorkoutSummary, "exercise_count" | "set_count"> & {
   notes: string;
+  /** Edits so far (an edit names the revision it started from), and when the last one was. Missing in older copies. */
+  edit_revision?: number;
+  edited_at?: string | null;
   /** The routine version it started from, and that version's routine. Null for imports and empty workouts. */
   routine_version_id: string | null;
   routine_id: string | null;

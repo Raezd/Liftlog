@@ -566,7 +566,8 @@ def list_versions(routine_id: uuid.UUID, user: CurrentUser, session: DbSession) 
     # The caller's workouts that started from each version, newest first.
     used: dict[uuid.UUID, list[dict]] = {}
     for w in session.scalars(select(Workout).where(
-            Workout.user_id == user.id, Workout.routine_version_id.in_([v.id for v in vs]))
+            Workout.user_id == user.id, Workout.deleted_at.is_(None),
+            Workout.routine_version_id.in_([v.id for v in vs]))
             .order_by(Workout.started_at.desc())):
         used.setdefault(w.routine_version_id, []).append(
             {"id": str(w.id), "title": w.title, "workout_date": w.workout_date.isoformat()})
@@ -603,7 +604,8 @@ def from_workout(body: FromWorkoutIn, user: CurrentUser, session: DbSession, res
     if existing is not None:
         response.status_code = status.HTTP_200_OK
         return routine_detail(session, user, existing)
-    w = session.scalar(select(Workout).where(Workout.id == body.workout_id, Workout.user_id == user.id)
+    w = session.scalar(select(Workout).where(Workout.id == body.workout_id, Workout.user_id == user.id,
+                                             Workout.deleted_at.is_(None))
                        .options(selectinload(Workout.exercises).selectinload(WorkoutExercise.sets)))
     if w is None:
         raise not_found()

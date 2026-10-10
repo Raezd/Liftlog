@@ -142,6 +142,23 @@ test("the finish summary judges a workout only against earlier history", () => {
   assert.deepEqual(recordsFor([wo("now", 2, { bench: [set("205", 5)] })], "now", logging), []);
 });
 
+test("an edit that removes a record's set moves the record to whichever set holds it now", () => {
+  const top = set("235", 3);
+  const ws = [
+    wo("w1", 1, { bench: [set("185", 5)] }),
+    wo("w2", 2, { bench: [set("225", 3)] }),
+    wo("w3", 3, { bench: [top, set("185", 5)] }),
+  ];
+  const heaviest = (list: StatWorkout[]) => records(list, logging).byExercise.get("bench")!.best.heaviest!;
+  assert.equal(heaviest(ws).set!.id, top.id);
+  assert.ok(earned(ws, "w3").includes("heaviest"));
+  // w3 edited: the 235 set was a typo and is removed. Records are computed on read, so the next read moves it.
+  const edited = [ws[0], ws[1], { ...ws[2], exercises: [{ exercise_id: "bench", sets: [ws[2].exercises[0].sets[1]] }] }];
+  assert.equal(heaviest(edited).workout_id, "w2");
+  assert.ok(!earned(edited, "w3").includes("heaviest"));
+  assert.ok(earned(edited, "w2").includes("heaviest"));
+});
+
 test("Epley: a single is its own weight, and over 10 reps there's no estimate", () => {
   assert.equal(e1rm(100, 1), 100);
   assert.equal(e1rm(100, 3), 110);

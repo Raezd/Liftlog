@@ -287,6 +287,7 @@ class Plan:
 
 def plan(session: Session, user: User, parsed: ParsedFile) -> Plan:
     hashes = {w.key: content_hash(w, parsed.weight_unit, parsed.distance_unit) for w in parsed.workouts}
+    # Deleted workouts count too, so a deleted import never comes back.
     existing = dict(session.execute(select(Workout.import_key, Workout.import_hash).where(
         Workout.user_id == user.id, Workout.import_key.in_(list(hashes)))).all())
     new, skipped, conflicting = [], [], []

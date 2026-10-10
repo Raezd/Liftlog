@@ -189,12 +189,19 @@ class Workout(Base):
     # The routine version this workout started from. Null for imports and empty workouts.
     routine_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("routine_versions.id", ondelete="RESTRICT"))
+    # Both change only through edit_finished_workout() (0009). edit_revision
+    # counts its change log rows; an edit names the revision it started from.
+    edit_revision: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # A soft delete: the row stays (its routine version and import key with
+    # it), but every read path leaves it out.
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[dt.datetime] = _created()
     exercises: Mapped[list[WorkoutExercise]] = relationship(
         order_by="WorkoutExercise.position", cascade="all, delete-orphan")
     __table_args__ = (
         CheckConstraint("source IN ('liftlog', 'hevy_import')", name="ck_workouts_source"),
         CheckConstraint("ended_at IS NULL OR ended_at >= started_at", name="ck_workouts_times"),
+        CheckConstraint("edit_revision >= 0", name="ck_workouts_edit_revision"),
         CheckConstraint("(source = 'hevy_import') = (import_key IS NOT NULL)", name="ck_workouts_import_key"),
         Index("uq_workouts_import_key", "user_id", "import_key", unique=True,
               postgresql_where=text("import_key IS NOT NULL")),

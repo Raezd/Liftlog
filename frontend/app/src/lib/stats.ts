@@ -40,6 +40,8 @@ export type StatWorkout = {
   workout_date: string;
   source: "liftlog" | "hevy_import";
   status: StatStatus;
+  /** When it was last edited, if ever. */
+  edited_at?: string | null;
   exercises: { exercise_id: string; sets: StatSet[] }[];
 };
 
@@ -63,7 +65,7 @@ export function statWorkouts(cached: WorkoutDetail[], queued: Queued[], timeZone
   const all: StatWorkout[] = [
     ...cached.map((w): StatWorkout => ({
       id: w.id, title: w.title, started_at: w.started_at, workout_date: w.workout_date, source: w.source, status: "uploaded",
-      exercises: w.exercises,
+      edited_at: w.edited_at ?? null, exercises: w.exercises,
     })),
     ...queued.filter((q) => !have.has(q.id)).map((q): StatWorkout => ({
       id: q.id, title: q.body.title, started_at: q.body.started_at, workout_date: workoutDate(q.body.started_at, timeZone),

@@ -30,6 +30,7 @@ function server(answers: Record<string, number>) {
       },
       uploaded: async (x: Queued) => { log.push(`uploaded ${x.id}`); },
       refused: async (x: Queued, why: string) => { log.push(`refused ${x.id}: ${why}`); },
+      gone: async (x: Queued) => { log.push(`gone ${x.id}`); },
     },
   };
 }
@@ -79,6 +80,14 @@ test("a refused upload keeps the server's reason for Needs attention, and later 
     put: async (x: Queued) => { if (x.id === "a") throw new HttpError(422, reason); return x.id; },
     uploaded: async (x: Queued) => { log.push(`uploaded ${x.id}`); },
     refused: async (x: Queued, why: string) => { log.push(`refused ${x.id}: ${why}`); },
+    gone: async (x: Queued) => { log.push(`gone ${x.id}`); },
   });
   assert.deepEqual(log, [`refused a: ${reason}`, "uploaded b"]);
+});
+
+test("a workout deleted on the server (410) is dropped from the phone, not marked Needs attention", async () => {
+  const s = server({ b: 410 });
+  const problem = await uploadQueue([q("a", 1), q("b", 2), q("c", 3)], ME, s.deps);
+  assert.deepEqual(s.log, ["put a", "uploaded a", "put b", "gone b", "put c", "uploaded c"]);
+  assert.equal(problem, null);
 });

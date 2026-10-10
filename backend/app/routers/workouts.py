@@ -5,6 +5,13 @@ object under its client-made UUIDv7 (PUT /api/workouts/{id}). The upload is
 idempotent: the same content again changes nothing and answers 200, different
 content under the same id is 409 and never overwrites, and another user's id
 is 404. Once stored, a finished workout is immutable in Postgres (0007).
+
+A stored workout can then be edited (POST /api/workouts/{id}/edit) or
+deleted (DELETE /api/workouts/{id}), only with a connection and only through
+edit_finished_workout(), which writes the change log (0009). An edit names
+the edit_revision it started from; a stale one is 409 and writes nothing.
+A delete is soft: every read leaves the workout out, and an upload under its
+id is 410 so the phone drops it.
 """
 
 import datetime as dt
@@ -13,17 +20,19 @@ import json
 import uuid
 from decimal import Decimal
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query, Response, status
 from pydantic import AwareDatetime, BaseModel, Field
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.dates import workout_date_for
 from app.library import check_new_id, problem
 from app.models import (
-    Routine, RoutineExercise, RoutineVersion, Set, User, UserExercise, Workout, WorkoutExercise,
+    Routine, RoutineExercise, RoutineVersion, Set, User, UserExercise, Workout, WorkoutChange, WorkoutExercise,
+    uuid7,
 )
 from app.routers.routines import SetIn, check_text, group_runs
 from app.routers.routines import make_set as make_target
@@ -42,14 +51,16 @@ def _iso(t: dt.datetime | None) -> str | None:
 
 
 def workout_out(w: Workout, names: dict[uuid.UUID, str], version: RoutineVersion | None = None,
-                routine_name: str | None = None) -> dict:
+                routine_name: str | None = None, edited_at: dt.datetime | None = None) -> dict:
     """A workout with its exercises and sets. Display uses each exercise's
     current name; logged_name is what it was called then. `version` is the
-    routine version it started from, named by its routine and save date."""
+    routine version it started from, named by its routine and save date.
+    `edited_at` is its last edit, if any."""
     return {
         "id": str(w.id), "title": w.title, "workout_date": w.workout_date.isoformat(),
         "started_at": w.started_at.isoformat(), "ended_at": _iso(w.ended_at),
         "notes": w.notes, "source": w.source,
+        "edit_revision": w.edit_revision, "edited_at": _iso(edited_at),
         "routine_version_id": str(w.routine_version_id) if w.routine_version_id else None,
         "routine_id": str(version.routine_id) if version else None,
         "routine_name": routine_name,
@@ -72,11 +83,12 @@ def workout_out(w: Workout, names: dict[uuid.UUID, str], version: RoutineVersion
 
 def full_workouts(session: Session, user: User, ids: list[uuid.UUID] | None = None) -> list[dict]:
     """The caller's workouts, newest first, with everything in them (all of
-    them, or just `ids`). The phone caches all of these for offline use."""
+    them, or just `ids`). The phone caches all of these for offline use.
+    Deleted workouts are never included."""
     stmt = (select(Workout, RoutineVersion, Routine.name)
             .outerjoin(RoutineVersion, RoutineVersion.id == Workout.routine_version_id)
             .outerjoin(Routine, Routine.id == RoutineVersion.routine_id)
-            .where(Workout.user_id == user.id)
+            .where(Workout.user_id == user.id, Workout.deleted_at.is_(None))
             .options(selectinload(Workout.exercises).selectinload(WorkoutExercise.sets))
             .order_by(Workout.started_at.desc()))
     if ids is not None:
@@ -84,7 +96,11 @@ def full_workouts(session: Session, user: User, ids: list[uuid.UUID] | None = No
     rows = session.execute(stmt).all()
     names = dict(session.execute(select(UserExercise.id, UserExercise.name).where(
         UserExercise.user_id == user.id)).all())
-    return [workout_out(w, names, v, rname) for w, v, rname in rows]
+    edited = dict(session.execute(
+        select(WorkoutChange.workout_id, func.max(WorkoutChange.changed_at))
+        .where(WorkoutChange.user_id == user.id, WorkoutChange.reason == "edit")
+        .group_by(WorkoutChange.workout_id)).all())
+    return [workout_out(w, names, v, rname, edited.get(w.id)) for w, v, rname in rows]
 
 
 @router.get("")
@@ -95,7 +111,7 @@ def list_workouts(user: CurrentUser, session: DbSession, before: dt.datetime | N
                  .correlate(Workout).scalar_subquery())
     sets = (select(func.count()).select_from(Set).join(WorkoutExercise)
             .where(WorkoutExercise.workout_id == Workout.id).correlate(Workout).scalar_subquery())
-    stmt = select(Workout, exercises, sets).where(Workout.user_id == user.id)
+    stmt = select(Workout, exercises, sets).where(Workout.user_id == user.id, Workout.deleted_at.is_(None))
     if before is not None:
         stmt = stmt.where(Workout.started_at < before)
     rows = session.execute(stmt.order_by(Workout.started_at.desc()).limit(limit + 1)).all()
@@ -184,9 +200,13 @@ def upload_hash(body: WorkoutUp) -> str:
 
 def already_there(session: Session, user: User, w: Workout, digest: str, response: Response) -> dict:
     """An upload under an id that exists: a retry if it's the caller's with
-    the same content, otherwise a conflict (or 404 if it's someone else's)."""
+    the same content, otherwise a conflict (or 404 if it's someone else's,
+    410 if it was deleted). upload_hash is the first upload's and edits never
+    change it, so a retry of that upload after an edit is still a no-op."""
     if w.user_id != user.id:
         raise not_found()
+    if w.deleted_at is not None:
+        raise problem("workout_deleted", "This workout was deleted.", status.HTTP_410_GONE)
     if w.upload_hash != digest:
         raise problem("workout_conflict", "A different workout was already saved under this id.",
                       status.HTTP_409_CONFLICT)
@@ -370,3 +390,159 @@ def upload_workout(workout_id: uuid.UUID, body: WorkoutUp, user: CurrentUser, se
             raise problem("id_taken", "That id is already in use.", status.HTTP_409_CONFLICT)
         return already_there(session, user, existing, digest, response)
     return full_workouts(session, user, [w.id])[0]
+
+
+# ---------- edit and delete ----------
+
+class WorkoutEdit(BaseModel):
+    """The whole edited workout. Start is the user's own wall-clock time in
+    their timezone; the end is start plus duration. Exercise and set ids are
+    kept from the workout, or new UUIDv7s for added ones. Sets' completed_at
+    comes from the stored set with that id (none for added sets)."""
+    base_revision: int
+    title: str = Field(max_length=200)
+    notes: str = Field("", max_length=5000)
+    start_date: dt.date
+    start_time: dt.time
+    duration_minutes: int
+    exercises: list[ExerciseUp] = Field([], max_length=100)
+
+
+def locked_workout(session: Session, user: User, workout_id: uuid.UUID) -> Workout:
+    """The caller's workout, locked until commit so edits and deletes take
+    turns. Someone else's, a deleted one, or none at all is 404."""
+    w = session.scalar(select(Workout).where(Workout.id == workout_id).with_for_update()
+                       .options(selectinload(Workout.exercises).selectinload(WorkoutExercise.sets)))
+    if w is None or w.user_id != user.id or w.deleted_at is not None:
+        raise not_found()
+    return w
+
+
+def _key(v: Decimal | None) -> str | None:
+    return None if v is None else format(v.normalize(), "f")
+
+
+def content_key(title, notes, started_at, ended_at, exercises) -> tuple:
+    """What an edit can change, for telling a real edit from an identical
+    save. `exercises` is (id, exercise_id, group, notes, rest, sets) with
+    sets as SetUp or Set rows. Text compares as the save would store it,
+    and groups after renumbering."""
+    groups = group_runs([e[2] for e in exercises], strict=False)
+    return (" ".join(title.split()), notes.strip(), started_at, ended_at, tuple(
+        (e[0], e[1], g, e[3].strip(), e[4], tuple(
+            (s.id, s.set_type, _key(s.weight_value), s.weight_unit, s.reps, _key(s.rpe), s.duration_seconds,
+             _key(s.distance_value), s.distance_unit) for s in e[5]))
+        for e, g in zip(exercises, groups)))
+
+
+def edit_times(w: Workout, body: WorkoutEdit, user: User) -> tuple[dt.datetime, dt.datetime]:
+    """New started_at and ended_at. Unchanged to the minute keeps the stored
+    value, seconds and all, so a save with no time edit changes no time."""
+    zone = ZoneInfo(user.timezone)
+    if body.start_date.year < 1970:
+        raise problem("bad_times", "Pick a start date from 1970 on.")
+    start = dt.datetime.combine(body.start_date, body.start_time.replace(second=0, microsecond=0), tzinfo=zone)
+    if w.started_at.astimezone(zone).replace(second=0, microsecond=0) == start:
+        start = w.started_at
+    if body.duration_minutes <= 0:
+        raise problem("bad_times", "The workout needs to last at least a minute.")
+    now = dt.datetime.now(dt.timezone.utc)
+    if start > now or body.duration_minutes > (now - start).total_seconds() / 60:
+        raise problem("bad_times", "The workout can't end in the future.")
+    old_minutes = int((w.ended_at - w.started_at).total_seconds() // 60) if w.ended_at else None
+    if start == w.started_at and old_minutes == body.duration_minutes:
+        return start, w.ended_at
+    return start, start + dt.timedelta(minutes=body.duration_minutes)
+
+
+@router.post("/{workout_id}/edit")
+def edit_workout(workout_id: uuid.UUID, body: WorkoutEdit, user: CurrentUser, session: DbSession) -> dict:
+    """Saves an edited workout through edit_finished_workout(), one change
+    log row with the before and after. 409 edit_conflict when the workout
+    changed since base_revision; 422 with a plain reason for bad values; an
+    identical save writes nothing. Nothing is written on any refusal."""
+    w = locked_workout(session, user, workout_id)
+    if body.base_revision != w.edit_revision:
+        raise problem("edit_conflict", "This workout was changed somewhere else.", status.HTTP_409_CONFLICT)
+    title = check_text(body.title, "workout")
+    if not body.exercises:
+        raise problem("no_exercises", "A workout needs at least one exercise. To remove it all, delete the workout.")
+    mine = set(session.scalars(select(UserExercise.id).where(
+        UserExercise.user_id == user.id, UserExercise.id.in_({e.exercise_id for e in body.exercises}))))
+    if any(e.exercise_id not in mine for e in body.exercises):
+        raise not_found()
+    names = dict(session.execute(select(UserExercise.id, UserExercise.name).where(
+        UserExercise.id.in_(mine))).all())
+    for e in body.exercises:
+        if not e.sets:
+            raise problem("no_sets", f"{names[e.exercise_id]} has no sets. Add a set or remove the exercise.")
+    check_sets(body, names)
+    started_at, ended_at = edit_times(w, body, user)
+
+    old_exercises = {e.id: e for e in w.exercises}
+    old_sets = {s.id: s for e in w.exercises for s in e.sets}
+    ex_ids = [e.id for e in body.exercises]
+    set_ids = [s.id for e in body.exercises for s in e.sets]
+    if len(set(ex_ids)) != len(ex_ids) or len(set(set_ids)) != len(set_ids):
+        raise problem("duplicate_id", "Each exercise and set needs its own id.")
+    new_ex = [i for i in ex_ids if i not in old_exercises]
+    new_sets = [i for i in set_ids if i not in old_sets]
+    for i in new_ex + new_sets:
+        check_new_id(i)
+    if ((new_ex and session.scalar(select(exists().where(WorkoutExercise.id.in_(new_ex)))))
+            or (new_sets and session.scalar(select(exists().where(Set.id.in_(new_sets)))))):
+        raise problem("id_taken", "That id is already in use.", status.HTTP_409_CONFLICT)
+
+    notes = body.notes.strip()
+    before = content_key(w.title, w.notes, w.started_at, w.ended_at, [
+        (e.id, e.exercise_id, e.superset_group, e.notes, e.rest_seconds, e.sets) for e in w.exercises])
+    after = content_key(title, notes, started_at, ended_at, [
+        (e.id, e.exercise_id, e.superset_group, e.notes, e.rest_seconds, e.sets) for e in body.exercises])
+    if before == after:
+        session.rollback()
+        return full_workouts(session, user, [w.id])[0]
+
+    groups = group_runs([e.superset_group for e in body.exercises], strict=False)
+    workout_date = (w.workout_date if started_at == w.started_at
+                    else workout_date_for(started_at, user.timezone))
+
+    def logged(e: ExerciseUp) -> str:
+        old = old_exercises.get(e.id)
+        return old.logged_name if old is not None and old.exercise_id == e.exercise_id else names[e.exercise_id]
+
+    def set_doc(s: SetUp, k: int) -> dict:
+        row = make_set(s, k)
+        old = old_sets.get(s.id)
+        return {
+            "id": str(s.id), "position": k, "set_type": s.set_type,
+            "weight_value": _num(row.weight_value), "weight_unit": row.weight_unit, "weight_kg": _num(row.weight_kg),
+            "reps": s.reps, "rpe": _num(s.rpe), "duration_seconds": s.duration_seconds,
+            "distance_value": _num(row.distance_value), "distance_unit": row.distance_unit,
+            "distance_m": _num(row.distance_m), "completed_at": _iso(old.completed_at) if old else None,
+        }
+
+    doc = {
+        "title": title, "notes": notes, "started_at": started_at.isoformat(), "ended_at": ended_at.isoformat(),
+        "workout_date": workout_date.isoformat(),
+        "exercises": [{
+            "id": str(e.id), "exercise_id": str(e.exercise_id), "position": pos, "superset_group": g,
+            "notes": e.notes.strip(), "logged_name": logged(e), "rest_seconds": e.rest_seconds,
+            "sets": [set_doc(s, k) for k, s in enumerate(e.sets)],
+        } for pos, (e, g) in enumerate(zip(body.exercises, groups))],
+    }
+    session.execute(text("SELECT edit_finished_workout(:c, :w, 'edit', :a)"),
+                    {"c": uuid7(), "w": w.id, "a": json.dumps(doc)})
+    session.commit()
+    session.expire_all()
+    return full_workouts(session, user, [w.id])[0]
+
+
+@router.delete("/{workout_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workout(workout_id: uuid.UUID, user: CurrentUser, session: DbSession) -> None:
+    """Soft delete through edit_finished_workout(), with a change log row.
+    The workout disappears from every read; there's no undo."""
+    w = locked_workout(session, user, workout_id)
+    now = dt.datetime.now(dt.timezone.utc)
+    session.execute(text("SELECT edit_finished_workout(:c, :w, 'delete', :a)"),
+                    {"c": uuid7(), "w": w.id, "a": json.dumps({"deleted_at": now.isoformat()})})
+    session.commit()

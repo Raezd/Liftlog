@@ -43,11 +43,20 @@ export default function History() {
   );
 }
 
-export function StatusBadge({ w }: { w: Pick<StatWorkout, "status" | "source"> }) {
+export function StatusBadge({ w }: { w: Pick<StatWorkout, "status" | "source" | "edited_at"> }) {
   if (w.status === "waiting") return <Badge>Waiting to upload</Badge>;
   if (w.status === "attention") return <Badge>Needs attention</Badge>;
-  if (w.source === "hevy_import") return <Badge tone="muted">Imported</Badge>;
-  return null;
+  return (
+    <>
+      {w.source === "hevy_import" && <Badge tone="muted">Imported</Badge>}
+      {w.edited_at && <EditedBadge at={w.edited_at} />}
+    </>
+  );
+}
+
+/** "Edited Oct 10, 2026": when a finished workout was last changed. */
+export function EditedBadge({ at }: { at: string }) {
+  return <Badge tone="muted">Edited {new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</Badge>;
 }
 
 function WorkoutList({ workouts, dates = true }: { workouts: StatWorkout[]; dates?: boolean }) {
@@ -60,7 +69,7 @@ function WorkoutList({ workouts, dates = true }: { workouts: StatWorkout[]; date
             <Link to={`/workouts/${w.id}`} className="block px-4 py-3 hover:bg-sunken focus-visible:bg-sunken">
               <span className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted">
                 {dates ? longDate(w.workout_date) : <span />}
-                <StatusBadge w={w} />
+                <span className="flex flex-wrap gap-1"><StatusBadge w={w} /></span>
               </span>
               <span className="block font-bold">{w.title}</span>
               <span className="block text-sm text-muted">{plural(w.exercises.length, "exercise")}, {plural(sets, "set")}</span>

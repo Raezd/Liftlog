@@ -10,6 +10,9 @@
  * rest. A workout that needs attention is skipped from then on, unless it's
  * retried by itself (`only`).
  *
+ * A 410 means the workout was uploaded before and then deleted (on another
+ * device, say). It's dropped from the queue, not marked: there's nothing to fix.
+ *
  * Keep this file free of runtime imports so the tests run with plain Node.
  */
 import type { Queued } from "./session.ts";
@@ -18,6 +21,8 @@ export type UploadDeps<W> = {
   put: (q: Queued) => Promise<W>;
   uploaded: (q: Queued, w: W) => Promise<void>;
   refused: (q: Queued, why: string) => Promise<void>;
+  /** The server deleted it: drop it from the phone. */
+  gone: (q: Queued) => Promise<void>;
 };
 
 export const OFFLINE = "Can't reach the server right now. Your workouts are saved on this phone.";
@@ -38,6 +43,10 @@ export async function uploadQueue<W>(queue: Queued[], login: string, deps: Uploa
     } catch (e) {
       const code = status(e);
       if (code < 400 || code >= 500) return OFFLINE;
+      if (code === 410) {
+        await deps.gone(q);
+        continue;
+      }
       const why = code === 409 ? CONFLICT : (e as Error).message;
       await deps.refused(q, why);
       problem = why;

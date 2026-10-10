@@ -447,10 +447,48 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Routine with two warm-ups shows W, W, 1 on its view page and in the editor | pending on the page |
 | Three-exercise superset shows every name in full under Up next at normal text size | pending on phone |
 
-## 14. Known gaps
+## 14. Spec 6b: editing and deleting finished workouts
+
+**Status:** built and tested. Migration `0009`. Rules are in `CLAUDE.md` (Editing and deleting finished workouts). What's deployed comes only from the live checks in section 3.
+
+- **Migration `0009`:** `workouts.edit_revision` (0) and `workouts.deleted_at`. A trigger lets them change only inside `edit_finished_workout()`, which now bumps the revision on every call, sets `deleted_at` when asked, and refuses a deleted workout. Downgrades and upgrades cleanly (checked once against the test database with an edited workout in it; not kept). A downgrade brings deleted workouts back into every list, since the column goes away.
+- **Server:** `POST /api/workouts/{id}/edit` (whole workout plus `base_revision`; 409 `edit_conflict` when stale; 422 with a plain reason; identical saves write nothing) and `DELETE /api/workouts/{id}` (soft, 204). Workouts carry `edit_revision` and `edited_at`. Deleted workouts are left out of history, the detail page, the offline copy, both exports, save as routine, and the Versions list. An upload under a deleted id is 410 `workout_deleted`.
+- **Editor** (`/workouts/{id}/edit`, from Edit on the detail page): title, notes, start date and time in your timezone, duration in hours and minutes, exercises (add from the library, remove, reorder by buttons or drag, supersets, notes), and sets (add, remove, move, type, RPE, and the workout screen's own number fields). Inline heavy weight warning; Save opens a confirm screen with the date, duration, counts, and any flagged weights (tap one to jump to it). A conflict offers to load the latest. Leaving with unsaved changes asks first.
+- **Delete:** on the detail page, after "It will disappear from your history, records, and exports, on every device. This can't be undone."
+- **Offline:** Edit and Delete are disabled with "Editing and deleting need a connection." The editor keeps typed changes but won't save until the connection is back.
+- **Phone:** a 410 drops the workout from the queue (no Needs attention). After a save or delete, this device updates its copy right away and refreshes; others catch up on their next refresh.
+- **Labels:** "Edited" with the last edit's date in History, on exercise pages' session lists, and on the detail page.
+- **Tests:** 84 backend (new `tests/test_edits.py`: one change log row with before and after and the revision bump; an identical save writes nothing; a stale revision is 409; 422 and nothing written for a bad weight, no exercises, zero duration, and an end in the future; the date on a time edit, with the 4 AM rollover; delete with its log row and gone from history, the offline copy, both exports, and the one-workout export; 410 on upload; a retried first upload after an edit is 200 and changes nothing while other content is 409; Hevy re-import skips a deleted import; another user's edit and delete are 404 and she can edit and delete her own; a direct UPDATE of `deleted_at` or `edit_revision` is rejected, and no new workout can start deleted), 59 frontend (new: a record moves when an edit removes its set; the queue drops a 410 without Needs attention; the copy drops a deleted workout and replaces an edited one in start order).
+
+### Choices made while building (not in the spec)
+
+- **The retry rule uses `upload_hash`.** The spec says to compare with the earliest change log row's before snapshot. `upload_hash` is the first upload's hash and edits never touch it, so it answers the same question, and it compares upload to upload, the way section 10's trailing-zero and microsecond fix needs. No snapshot comparison was written.
+- **Every exercise needs at least one set,** not just one of them: finished workouts never have an empty exercise, and the reason names it ("Bench Press has no sets. Add a set or remove the exercise.").
+- **Times keep their seconds** unless changed: a start unchanged to the minute keeps the stored `started_at`, and an unchanged duration keeps `ended_at`. Changed times are whole minutes. `workout_date` is recomputed only when the start changes, so a later timezone change in Settings doesn't make an unrelated edit move the workout's day.
+- **Hidden set values are kept.** A value a set holds that its exercise's current logging type doesn't show (say a weight on an exercise switched to bodyweight later) is sent back unchanged, never dropped by an edit.
+- **Rest isn't editable** (not in the spec's list); each exercise keeps the rest it used, following a superset's first exercise when the order changes.
+- **Superset groups compare after renumbering,** so an import's Hevy group numbers don't make an unchanged save look like an edit. Supersets in the editor follow the upload's rules (runs over three are split), not the routine editor's refusal, so an import with a bigger superset can still be edited.
+- **The no-op comparison normalizes text** the way the save stores it (title spaces collapsed, notes trimmed), so stray whitespace in an imported title doesn't count as a change.
+- The delete confirmation's main button is the app's primary (accent) button; there's no separate danger color in the palette.
+- The editor gets exercise names and logging types from the offline copy (refreshed when it opens), since it includes archived exercises.
+
+| Check | Result |
+|---|---|
+| A workout left running for hours gets its real duration; History and the detail page show it and "Edited" | duration rule tested; pending on the page (Trav) |
+| Moving a start into the previous week moves it on the calendar and changes both weeks' volume | date recompute tested; volume reads the copy; pending on the page |
+| Adding one exercise and removing another shows on the detail page and both exercise pages | pending on the page |
+| Editing down a record's set moves the record and the exercise page updates | rule tested; pending on the page |
+| Editor open on desktop and phone, save on both: the second shows the conflict and reload; the first save is intact | stale revision tested; pending on devices |
+| Delete on desktop: gone from History, calendar, records, exports, and from the phone after its refresh | server side and cache update tested; pending on devices |
+| Airplane mode: Edit and Delete disabled with a reason | pending on phone |
+| A hand-run UPDATE of `deleted_at` in psql is rejected | tested; on live: `docker compose exec db psql -U liftlog -c "UPDATE workouts SET deleted_at = now()"` should fail |
+| Wife can't see, edit, or delete his workouts, and can edit and delete her own | tested; pending on her phone |
+| Tests pass; dump first; memory under limits; web and APK same commit | 84 backend, 59 frontend, build passes; deploy and APK: check live (section 3) |
+
+## 15. Known gaps
 
 - Routine editing needs a connection. Offline editing comes after v1 (the conflict check and client ids are ready for it).
-- Editing finished workouts (Spec 6b). Records for assisted exercises.
+- Records for assisted exercises. Undoing an edit or delete, and a screen for browsing the change log, are out of scope for v1. Flagging long workouts at finish is banked.
 - The triggers' escape hatch is a transaction-local setting, so someone with direct database access can still set it by hand. The rule they enforce is against accidents and app bugs, not the database owner.
 - Deleting a user who has finished workouts is refused by the triggers (no flow deletes users).
 - Reordering while archived routines are hidden leaves their positions alone, so a restored one can land between others.
