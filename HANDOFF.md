@@ -351,7 +351,31 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Start opens within about 2 seconds on weak signal | pending (Trav) |
 | Tests pass; dump before migration; memory under limits; web and APK same commit | 60 backend, 24 frontend, build passes; deploy pending |
 
-## 11. Known gaps
+## 11. Spec 5b: plate math, gear, export
+
+**Status:** built, tested, and committed. **Not deployed:** Trav runs `scripts/deploy.sh` (dump first, then `0008` runs), then `scripts/android-build.sh` and `scripts/android-publish.sh` from the same commit, and installs the APK on both phones. Rules are in `CLAUDE.md` (Plate math and gear, Export).
+
+- **Migration `0008`:** `bars`, `plate_sets`, `plates`; `users.default_bar_id`, `default_plate_set_id`, `gear_seeded`; `user_exercises.bar_id`, `plate_set_id`, `plate_math` (turned on for existing barbell exercises). Downgrades and upgrades cleanly (checked once with gear in it).
+- **Gear:** presets copied in on first use, in the user's unit. Settings, Bars and plates (`/settings/gear`). Library editor: Show plates, bar, plates. Gear is in the offline copy.
+- **Workout card:** plate button on the weight field opens the plate sheet; nearest-load buttons set the weight; plates unchecked there are left out for this workout only.
+- **Export:** CSV (Hevy layout) and JSON (schema version 1), full history from Settings, Export and one workout from its History page. In the Android app those places show the browser address instead.
+- **Verified:** Trav's real Hevy file, imported into a scratch user and exported again, came out byte for byte the same (one-off check, not kept). Gear endpoints smoke-checked once (not kept: simple CRUD).
+- **Tests:** 62 backend (new `tests/test_export.py`: export privacy, CSV round trip), 35 frontend (new `tests/plates.test.ts`), build passes.
+- **Choices made while building:** gear lists sort by name; the current default bar or plate set can't be deleted until another is picked; a bar may weigh 0 (sleds); weights allow up to 3 decimals; delete in the gear page asks for a second tap; the one-workout JSON carries the same exercises, routines, and gear as the full one.
+
+| Check | Result |
+|---|---|
+| Airplane mode: 225 lb on the Olympic bar shows 45 and 45 per side | rule tested; pending on phone (Trav) |
+| 137 lb shows 135 and 137.5; tapping sets the weight | rule tested; pending on phone |
+| 30 lb shows the below-the-bar message and the empty bar | rule tested; pending on phone |
+| Leaving out the 2.5s changes every exercise in that workout; the next workout has them back | pending on phone |
+| Custom sled bar on a plate-loaded exercise | pending on phone |
+| Desktop exports in both formats; CSV has Hevy's columns; JSON has routines and gear | tested; pending in a browser |
+| Android app export screen points to the browser | pending on phone |
+| Wife sees her own preset gear and exports only her data | isolation tested; pending on her phone |
+| Tests pass; dump before migration; memory under limits; web and APK same commit | tests pass; deploy pending |
+
+## 12. Known gaps
 
 - Routine editing needs a connection. Offline editing comes after v1 (the conflict check and client ids are ready for it).
 - History and the workout view are online only. A workout waiting to upload shows in the unsynced count, not in History, until it uploads.

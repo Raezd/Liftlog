@@ -12,6 +12,7 @@ from app.library import (
     catalog_summary, copy_from_catalog, create_custom, exercise_out, problem, set_muscles, by_name, check_name,
 )
 from app.models import Muscle, MuscleMapChange, UserExercise
+from app.routers.gear import check_exercise_gear
 from app.users import CurrentUser, DbSession, not_found, owned
 
 router = APIRouter(prefix="/api")
@@ -106,6 +107,10 @@ class ExerciseEdit(BaseModel):
     primary_muscles: list[str] | None = None
     secondary_muscles: list[str] | None = None
     archived: bool | None = None
+    # Plate math. Send null for the bar or plate set to use your default.
+    bar_id: uuid.UUID | None = None
+    plate_set_id: uuid.UUID | None = None
+    plate_math: bool | None = None
 
 
 @router.patch("/exercises/{exercise_id}")
@@ -127,5 +132,12 @@ def edit_exercise(exercise_id: uuid.UUID, body: ExerciseEdit, user: CurrentUser,
         set_muscles(session, ex, body.primary_muscles, body.secondary_muscles or [])
     if body.archived is not None:
         ex.archived = body.archived
+    check_exercise_gear(session, user, body.bar_id, body.plate_set_id)
+    if "bar_id" in body.model_fields_set:
+        ex.bar_id = body.bar_id
+    if "plate_set_id" in body.model_fields_set:
+        ex.plate_set_id = body.plate_set_id
+    if body.plate_math is not None:
+        ex.plate_math = body.plate_math
     session.commit()
     return get_exercise(exercise_id, user, session)

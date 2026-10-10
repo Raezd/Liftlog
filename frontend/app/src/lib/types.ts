@@ -27,6 +27,10 @@ export type Exercise = {
   secondary_muscles: string[];
   needs_review: boolean;
   archived: boolean;
+  /** Plate math: null bar or plate set means the user's default. */
+  bar_id: string | null;
+  plate_set_id: string | null;
+  plate_math: boolean;
 };
 
 export type MuscleMap = { primary: string[]; secondary: string[] };
@@ -202,4 +206,13 @@ export type OfflineCopy = {
   versions: Record<string, RoutineVersion>;
   /** Every workout, newest first. */
   workouts: WorkoutDetail[];
+  /** Missing in copies saved before plate math. */
+  gear?: Gear;
 };
+
+/** Plate math gear (GET /api/gear). Weights as entered plus unit plus kg. */
+export type Bar = { id: string; name: string; weight_value: string; weight_unit: WeightUnit; weight_kg: string };
+/** A plate size. Off plates are left out; null pairs is unlimited. */
+export type Plate = Bar & { enabled: boolean; pair_count: number | null };
+export type PlateSet = { id: string; name: string; plates: Plate[] };
+export type Gear = { default_bar_id: string | null; default_plate_set_id: string | null; bars: Bar[]; plate_sets: PlateSet[] };

@@ -87,6 +87,7 @@ def copy_from_catalog(session: Session, user: User, catalog_id: str, *, id: uuid
         primary_muscles=primary, secondary_muscles=secondary,
         needs_review=suggested.shoulders and not confirmed,
     )
+    ex.plate_math = ex.equipment == "barbell"
     session.add(ex)
     session.flush()
     return ex
@@ -104,7 +105,8 @@ def create_custom(session: Session, user: User, *, name: str, equipment: str, lo
         raise name_taken(name)
     ex = UserExercise(id=check_new_id(id), user_id=user.id, catalog_id=None, name=name,
                       equipment=equipment, logging_type=logging_type,
-                      primary_muscles=primary, secondary_muscles=secondary, needs_review=False)
+                      primary_muscles=primary, secondary_muscles=secondary, needs_review=False,
+                      plate_math=equipment == "barbell")
     session.add(ex)
     session.flush()
     return ex
@@ -145,4 +147,7 @@ def exercise_out(ex: UserExercise) -> dict:
         "logging_type": ex.logging_type, "primary_muscles": list(ex.primary_muscles),
         "secondary_muscles": list(ex.secondary_muscles), "needs_review": ex.needs_review,
         "archived": ex.archived,
+        "bar_id": str(ex.bar_id) if ex.bar_id else None,
+        "plate_set_id": str(ex.plate_set_id) if ex.plate_set_id else None,
+        "plate_math": ex.plate_math,
     }

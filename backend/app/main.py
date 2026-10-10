@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.auth import require_identity
 from app.db import get_sessionmaker
-from app.routers import exercises, imports, me, offline, routines, workouts
+from app.routers import exercises, export, gear, imports, me, offline, routines, workouts
 
 # Interactive API docs at /api/docs. Like every route, behind the auth middleware.
 app = FastAPI(title="Liftlog", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
@@ -54,7 +54,8 @@ def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "database": "ok"})
 
 
-for r in (me.router, exercises.router, workouts.router, imports.router, routines.router, offline.router):
+for r in (me.router, exercises.router, workouts.router, imports.router, routines.router, offline.router,
+          gear.router, export.router):
     app.include_router(r)
 
 

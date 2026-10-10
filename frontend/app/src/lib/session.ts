@@ -95,6 +95,9 @@ export type ActiveWorkout = {
   currentKey: string | null;
   rest: Rest | null;
   nextAlertId: number;
+  /** Plate ids left out of plate math for this workout only. Gone when it
+   *  finishes or is discarded; the saved gear never changes. */
+  excluded_plates?: string[];
 };
 
 export type UploadSet = {

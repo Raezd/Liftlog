@@ -80,7 +80,17 @@ export default function Settings() {
         </form>
       )}
 
-      <Card title="Import" className="mt-6">
+      <Card title="Bars and plates" className="mt-6">
+        <p className="mb-3 text-sm text-muted">The bars and plates plate math uses, and your defaults.</p>
+        <Link to="/settings/gear" className={`${btn.secondary} w-full`}>Bars and plates</Link>
+      </Card>
+
+      <Card title="Export">
+        <p className="mb-3 text-sm text-muted">Download your history as a spreadsheet or a full backup.</p>
+        <Link to="/settings/export" className={`${btn.secondary} w-full`}>Export</Link>
+      </Card>
+
+      <Card title="Import">
         <p className="mb-3 text-sm text-muted">Bring in your workout history from a Hevy export.</p>
         <Link to="/settings/import" className={`${btn.secondary} w-full`}>Import from Hevy</Link>
       </Card>

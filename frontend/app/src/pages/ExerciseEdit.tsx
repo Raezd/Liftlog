@@ -1,15 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { MusclePicker } from "../components/MusclePicker";
 import { Badge, Button, Card, ErrorText, Loading, Page, SelectField, TextField } from "../components/ui";
 import { get, send } from "../lib/api";
 import { shortDate } from "../lib/format";
+import { weightText } from "../lib/plates";
 import { useMuscleLabels } from "../lib/queries";
+import { FIELDS } from "../lib/session";
 import type { Equipment, ExerciseDetail, LoggingType, MuscleMap } from "../lib/types";
 import { EQUIPMENT_OPTIONS, LOGGING_OPTIONS } from "./ExerciseAdd";
+import { useGear } from "./Gear";
 
-type Form = { name: string; equipment: Equipment; logging_type: LoggingType; primary: string[]; secondary: string[] };
+type Form = {
+  name: string; equipment: Equipment; logging_type: LoggingType; primary: string[]; secondary: string[];
+  /** "" is the user's default. */
+  plate_math: boolean; bar_id: string; plate_set_id: string;
+};
 
 /** Edit an exercise. Saving the muscles confirms them and is recorded. */
 export default function ExerciseEdit() {
@@ -20,9 +27,13 @@ export default function ExerciseEdit() {
   const [form, setForm] = useState<Form | null>(null);
   const [saved, setSaved] = useState(false);
   const ex = q.data;
+  const gear = useGear();
 
   useEffect(() => {
-    if (ex) setForm({ name: ex.name, equipment: ex.equipment, logging_type: ex.logging_type, primary: ex.primary_muscles, secondary: ex.secondary_muscles });
+    if (ex) setForm({
+      name: ex.name, equipment: ex.equipment, logging_type: ex.logging_type, primary: ex.primary_muscles, secondary: ex.secondary_muscles,
+      plate_math: ex.plate_math, bar_id: ex.bar_id ?? "", plate_set_id: ex.plate_set_id ?? "",
+    });
   }, [ex]);
 
   const save = useMutation({
@@ -49,7 +60,8 @@ export default function ExerciseEdit() {
           e.preventDefault();
           setSaved(false);
           save.mutate({ name: form.name, equipment: form.equipment, logging_type: form.logging_type,
-            primary_muscles: form.primary, secondary_muscles: form.secondary });
+            primary_muscles: form.primary, secondary_muscles: form.secondary,
+            plate_math: form.plate_math, bar_id: form.bar_id || null, plate_set_id: form.plate_set_id || null });
         }}>
           {ex.needs_review && (
             <div className="mb-4 rounded-2xl border-2 border-accent bg-surface p-4" role="note">
@@ -60,10 +72,41 @@ export default function ExerciseEdit() {
           <Card>
             <TextField label="Name" required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <SelectField label="Equipment" options={EQUIPMENT_OPTIONS} value={form.equipment}
-              onChange={(e) => setForm({ ...form, equipment: e.target.value as Equipment })} />
+              onChange={(e) => {
+                const equipment = e.target.value as Equipment;
+                // Barbell exercises get plate math by default.
+                setForm({ ...form, equipment, plate_math: equipment === "barbell" ? true : form.plate_math });
+              }} />
             <SelectField label="Logged as" options={LOGGING_OPTIONS} value={form.logging_type}
               onChange={(e) => setForm({ ...form, logging_type: e.target.value as LoggingType })} />
           </Card>
+          {FIELDS[form.logging_type].weight && (
+            <Card title="Plate math">
+              <label className="mb-3 flex min-h-11 items-center justify-between gap-3">
+                <span>
+                  Show plates
+                  <span className="block text-sm text-muted">The weight field gets a plate button during workouts.</span>
+                </span>
+                <input type="checkbox" className="size-6 shrink-0 accent-[var(--accent-strong)]" checked={form.plate_math}
+                  onChange={(e) => setForm({ ...form, plate_math: e.target.checked })} />
+              </label>
+              {form.plate_math && gear.data && (() => {
+                const g = gear.data;
+                const defBar = g.bars.find((b) => b.id === g.default_bar_id);
+                const defSet = g.plate_sets.find((s) => s.id === g.default_plate_set_id);
+                return (
+                  <>
+                    <SelectField label="Bar" value={form.bar_id} onChange={(e) => setForm({ ...form, bar_id: e.target.value })}
+                      options={[["", `Default${defBar ? ` (${defBar.name}, ${weightText(defBar)})` : ""}`], ...g.bars.map((b): [string, string] => [b.id, `${b.name}, ${weightText(b)}`])]} />
+                    <SelectField label="Plates" value={form.plate_set_id} onChange={(e) => setForm({ ...form, plate_set_id: e.target.value })}
+                      options={[["", `Default${defSet ? ` (${defSet.name})` : ""}`], ...g.plate_sets.map((s): [string, string] => [s.id, s.name])]} />
+                    <Link to="/settings/gear" className="text-sm font-bold text-accent-text underline">Edit bars and plates</Link>
+                  </>
+                );
+              })()}
+              <ErrorText error={gear.error} />
+            </Card>
+          )}
           <Card title="Muscles">
             <MusclePicker primary={form.primary} secondary={form.secondary} onChange={(p, s) => setForm({ ...form, primary: p, secondary: s })} />
           </Card>

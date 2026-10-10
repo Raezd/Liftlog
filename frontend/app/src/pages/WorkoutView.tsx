@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListPlus } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { ExportLinks } from "../components/ExportLinks";
 import { Sheet } from "../components/Sheet";
 import { Badge, Button, ErrorText, Loading, Page, SelectField, TextField } from "../components/ui";
 import { get, send } from "../lib/api";
@@ -76,6 +77,10 @@ export default function WorkoutView() {
           </ol>
           <p className="mt-4 text-sm text-muted">W is a warm-up, D a drop set, F a set to failure.</p>
           <Button className="mt-4 w-full" onClick={() => setSaving(true)}><ListPlus size={20} aria-hidden /> Save as routine</Button>
+          <section aria-label="Export this workout" className="mt-6">
+            <h2 className="display mb-2 text-lg font-bold">Export this workout</h2>
+            <ExportLinks path={`/api/workouts/${w.id}/export`} page={`/workouts/${w.id}`} what="this workout" />
+          </section>
           <Sheet open={saving} title="Save as routine" onClose={() => setSaving(false)}>
             {saving && <SaveAsRoutine workout={w} />}
           </Sheet>

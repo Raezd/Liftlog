@@ -1,15 +1,17 @@
 import { Capacitor } from "@capacitor/core";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronLeft, ChevronRight, Minus, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Disc, Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ExerciseOrder } from "../components/ExerciseOrder";
+import { PlateSheet } from "../components/PlateSheet";
 import { Sheet } from "../components/Sheet";
 import { Badge, Button, ErrorText, Loading, Page, btn } from "../components/ui";
 import { currentActive, discard, update, useActive } from "../lib/active";
 import { get } from "../lib/api";
 import { LOGGING, SET_TYPE, SET_TYPE_SHORT, duration, plural } from "../lib/format";
 import { cached, useOffline } from "../lib/offline";
+import { gearFor } from "../lib/plates";
 import type { PastSet } from "../lib/prefill";
 import { groupOf, removeExercise, supersetLetters, units } from "../lib/reorder";
 import {
@@ -132,6 +134,14 @@ function setSet(key: string, setId: string, patch: Partial<ActiveSet>, instant =
     ...x,
     exercises: x.exercises.map((e) => (e.key !== key ? e : { ...e, sets: e.sets.map((s) => (s.id === setId ? { ...s, ...patch } : s)) })),
   }), { instant });
+}
+
+/** Leaves a plate out of plate math for the rest of this workout, or puts it back. */
+function excludePlate(plateId: string, out: boolean) {
+  return update((x) => {
+    const rest = (x.excluded_plates ?? []).filter((id) => id !== plateId);
+    return { ...x, excluded_plates: out ? [...rest, plateId] : rest };
+  });
 }
 
 function setSets(key: string, fn: (sets: ActiveSet[]) => ActiveSet[]) {
@@ -270,7 +280,15 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
   const [menu, setMenu] = useState<string | null>(null);
   const [rpeOpen, setRpeOpen] = useState<string | null>(null);
   const [problem, setProblem] = useState<{ id: string; text: string } | null>(null);
+  const [platesFor, setPlatesFor] = useState<string | null>(null);
   const menuSet = e.sets.find((s) => s.id === menu);
+  const { copy } = useOffline();
+  const excluded = useActive().workout?.excluded_plates ?? [];
+  // The exercise's current plate math settings, from the copy on this phone.
+  const info = copy?.exercises.find((x) => x.id === e.exercise_id);
+  const plateMath = !!f.weight && (info ? info.plate_math : e.equipment === "barbell");
+  const gear = copy?.gear ? gearFor(copy.gear, info ?? { bar_id: null, plate_set_id: null }) : null;
+  const plateSet = e.sets.find((s) => s.id === platesFor);
   const cols = [f.weight, f.reps && "Reps", f.distance && "Distance", f.duration && "Time"].filter(Boolean) as string[];
 
   return (
@@ -291,6 +309,7 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
           <SetRow key={s.id} e={e} s={s} n={k + 1} up={s.id === nextId}
             rpeOpen={rpeOpen === s.id} onRpe={() => setRpeOpen(rpeOpen === s.id ? null : s.id)}
             onMenu={() => setMenu(s.id)} problem={problem?.id === s.id ? problem.text : null}
+            onPlates={plateMath ? () => setPlatesFor(s.id) : undefined}
             onDone={async () => {
               const p = await toggleDone(e.key, s.id);
               setProblem(p ? { id: s.id, text: p } : null);
@@ -303,6 +322,12 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
         </Button>
         {rest}
       </div>
+
+      <PlateSheet open={plateSet !== undefined} onClose={() => setPlatesFor(null)}
+        value={plateSet?.weight ?? ""} unit={plateSet?.weight_unit ?? u.weight_unit}
+        bar={gear?.bar} plateSet={gear?.plateSet} excluded={excluded}
+        onExclude={(id, out) => void excludePlate(id, out)}
+        onUse={(total) => plateSet && void setSet(e.key, plateSet.id, { weight: total })} />
 
       <Sheet open={menuSet !== undefined} title={menuSet ? `Set ${e.sets.indexOf(menuSet) + 1}` : ""} onClose={() => setMenu(null)}>
         {menuSet && (
@@ -347,9 +372,9 @@ function NumField({ label, value, onChange, mode, placeholder, disabled }: {
   );
 }
 
-function SetRow({ e, s, n, up, rpeOpen, onRpe, onMenu, onDone, problem }: {
+function SetRow({ e, s, n, up, rpeOpen, onRpe, onMenu, onDone, onPlates, problem }: {
   e: ActiveExercise; s: ActiveSet; n: number; up: boolean; rpeOpen: boolean;
-  onRpe: () => void; onMenu: () => void; onDone: () => void; problem: string | null;
+  onRpe: () => void; onMenu: () => void; onDone: () => void; onPlates?: () => void; problem: string | null;
 }) {
   const f = FIELDS[e.logging_type];
   const field = (patch: Partial<ActiveSet>) => void setSet(e.key, s.id, patch, true);
@@ -362,7 +387,17 @@ function SetRow({ e, s, n, up, rpeOpen, onRpe, onMenu, onDone, problem }: {
           <span aria-hidden>{SET_TYPE_SHORT[s.set_type] || n}</span>
           <span className="sr-only">Set {n}, {SET_TYPE[s.set_type]}. Change type or remove</span>
         </button>
-        {f.weight && <NumField label={`${name} ${f.weight.toLowerCase()}, ${s.weight_unit}`} mode="decimal" value={s.weight} onChange={(v) => field({ weight: v })} />}
+        {f.weight && (onPlates ? (
+          <div className="flex min-w-0 flex-1 gap-1">
+            <NumField label={`${name} ${f.weight.toLowerCase()}, ${s.weight_unit}`} mode="decimal" value={s.weight} onChange={(v) => field({ weight: v })} />
+            <button type="button" onClick={onPlates}
+              className="inline-flex min-h-12 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-sunken text-accent-text">
+              <Disc size={20} aria-hidden /><span className="sr-only">Plates for {name}</span>
+            </button>
+          </div>
+        ) : (
+          <NumField label={`${name} ${f.weight.toLowerCase()}, ${s.weight_unit}`} mode="decimal" value={s.weight} onChange={(v) => field({ weight: v })} />
+        ))}
         {f.reps && <NumField label={`${name} reps`} mode="numeric" value={s.reps} placeholder={s.hint ?? undefined} onChange={(v) => field({ reps: v })} />}
         {f.distance && <NumField label={`${name} distance, ${s.distance_unit}`} mode="decimal" value={s.distance} onChange={(v) => field({ distance: v })} />}
         {f.duration && <NumField label={`${name} time`} mode="text" placeholder="m:ss" value={s.duration} onChange={(v) => field({ duration: v })} />}

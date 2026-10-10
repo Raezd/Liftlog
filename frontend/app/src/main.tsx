@@ -10,6 +10,8 @@ import { ApiError } from "./lib/api";
 import { getOffline, onOfflineChange, startOffline } from "./lib/offline";
 import ExerciseAdd from "./pages/ExerciseAdd";
 import ExerciseEdit from "./pages/ExerciseEdit";
+import Export from "./pages/Export";
+import GearPage from "./pages/Gear";
 import History from "./pages/History";
 import Import from "./pages/Import";
 import Library from "./pages/Library";
@@ -84,6 +86,8 @@ const router = createBrowserRouter([{ element: <Root />, children: [
       { path: "/library/add", element: <ExerciseAdd /> },
       { path: "/library/:id", element: <ExerciseEdit /> },
       { path: "/settings/import", element: <Import /> },
+      { path: "/settings/gear", element: <GearPage /> },
+      { path: "/settings/export", element: <Export /> },
       { path: "/settings", element: <Settings /> },
       { path: "*", element: <Routines /> },
     ],

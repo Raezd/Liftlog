@@ -75,6 +75,12 @@ class User(Base):
     distance_unit: Mapped[str] = mapped_column(Text, nullable=False, server_default="mi")
     # Rest timer alert plays through silent and vibrate (rest-timer-alarm-v1).
     play_through_silent: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Plate math gear: presets are copied in on first use (app/gear.py).
+    default_bar_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bars.id", ondelete="SET NULL", name="fk_users_default_bar", use_alter=True))
+    default_plate_set_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("plate_sets.id", ondelete="SET NULL", name="fk_users_default_plate_set", use_alter=True))
+    gear_seeded: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[dt.datetime] = _created()
     __table_args__ = (
         CheckConstraint("weight_unit IN ('lb', 'kg')", name="ck_users_weight_unit"),
@@ -100,6 +106,10 @@ class UserExercise(Base):
     secondary_muscles: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Plate math: null bar or plate set means the user's default.
+    bar_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("bars.id", ondelete="SET NULL"))
+    plate_set_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("plate_sets.id", ondelete="SET NULL"))
+    plate_math: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[dt.datetime] = _created()
     __table_args__ = (
         CheckConstraint(EQUIPMENT_CHECK, name="ck_user_exercises_equipment"),
@@ -377,4 +387,61 @@ class RoutineSet(Base):
         CheckConstraint("duration_seconds IS NULL OR duration_seconds >= 0", name="ck_routine_sets_duration"),
         CheckConstraint("rpe IS NULL OR (rpe BETWEEN 6 AND 10 AND rpe * 2 = trunc(rpe * 2))",
                         name="ck_routine_sets_rpe"),
+    )
+
+
+GEAR_WEIGHT = ("weight_value > 0 AND weight_value <= 2000 AND weight_unit IN ('lb', 'kg') "
+               "AND scale(weight_value) <= 3")
+
+
+class Bar(Base):
+    """A bar (or a sled, or anything plates load onto), per user."""
+    __tablename__ = "bars"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    weight_value: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    weight_unit: Mapped[str] = mapped_column(Text, nullable=False)
+    weight_kg: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    created_at: Mapped[dt.datetime] = _created()
+    __table_args__ = (
+        CheckConstraint("btrim(name) <> ''", name="ck_bars_name"),
+        CheckConstraint(GEAR_WEIGHT.replace("weight_value > 0", "weight_value >= 0"), name="ck_bars_weight"),
+        Index("ix_bars_user", "user_id"),
+    )
+
+
+class PlateSet(Base):
+    __tablename__ = "plate_sets"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[dt.datetime] = _created()
+    plates: Mapped[list[Plate]] = relationship(
+        order_by=lambda: [Plate.weight_kg.desc(), Plate.id], cascade="all, delete-orphan", passive_deletes=True)
+    __table_args__ = (
+        CheckConstraint("btrim(name) <> ''", name="ck_plate_sets_name"),
+        Index("ix_plate_sets_user", "user_id"),
+    )
+
+
+class Plate(Base):
+    """One plate size in a set. Off plates are left out of the math. A pair
+    count limits how many pairs there are; null is unlimited."""
+    __tablename__ = "plates"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    plate_set_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plate_sets.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    weight_value: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    weight_unit: Mapped[str] = mapped_column(Text, nullable=False)
+    weight_kg: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    pair_count: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = _created()
+    __table_args__ = (
+        CheckConstraint("btrim(name) <> ''", name="ck_plates_name"),
+        CheckConstraint(GEAR_WEIGHT, name="ck_plates_weight"),
+        CheckConstraint("pair_count IS NULL OR pair_count BETWEEN 1 AND 99", name="ck_plates_pair_count"),
+        Index("ix_plates_set", "plate_set_id"),
     )
