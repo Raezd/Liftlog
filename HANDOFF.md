@@ -279,7 +279,7 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 
 ## 9. Spec 5a: live workouts offline, sync, immutable history
 
-**Status:** built, tested, and committed (`b305534` backend, `3a3e271` frontend, plus this HANDOFF commit). **Not deployed yet:** the deploy was blocked by Claude Code's permission check in this session, so Trav runs it (below). A test APK `19-3a3e271` was built to check the Java change compiles; it was not published.
+**Status:** deployed with the section 10 follow-ups as `34e78f8` (`predeploy/liftlog-20261010-013020-before-34e78f8.dump`; `0007` is live) and Android `22-34e78f8` published to /download. Phone checks below are still Trav's.
 
 ### Deploy and publish (Trav)
 
@@ -333,11 +333,11 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Wife's phone shows only her data | upload and offline copy isolation tested; pending on her phone |
 | Timer test screen is gone | done in code; pending in the new APK |
 | A hand-run UPDATE on a finished set in psql is rejected | tested; pending on live (`docker compose exec db psql -U liftlog -c "UPDATE sets SET reps = reps"` should fail with "finished workouts are immutable") |
-| Tests pass; dump before migration; memory under limits | 56 backend, 18 frontend, build passes; deploy pending |
+| Tests pass; dump before migration; memory under limits | 56 backend, 18 frontend, build passes; deployed as `34e78f8` |
 
 ## 10. Spec 5a follow-ups: version recreation, Needs attention, sync tests
 
-**Status:** built, tested, and committed. **Not deployed:** same as section 9, Trav runs `scripts/deploy.sh`, then `scripts/android-build.sh` and `scripts/android-publish.sh` from the same commit. No migration in this change.
+**Status:** deployed as `34e78f8` with section 9, and Android `22-34e78f8` published. No migration in this change.
 
 - **Version recreation** (rule in `CLAUDE.md`, Offline model and sync): the phone keeps the started-from version's content with the workout and sends it as `routine_version`. If the server pruned that version meanwhile, it recreates it under its original id as an older, non-current version with no parent, and links the workout. Someone else's routine or version is 404 and recreates nothing; a deleted routine means no link.
 - **Needs attention:** a workout refused with a 4xx shows in the waiting bar with the reason and Copy as JSON, Retry, and Remove from phone (confirmed). It's never retried or removed automatically and never blocks the queue. The summary screen says so too.
@@ -349,7 +349,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 |---|---|
 | Workout from a routine in progress in airplane mode, routine edited and saved on desktop, workout finished and uploaded: linked to its routine and its version, which Versions lists | recreation tested; pending on phone (Trav) |
 | Start opens within about 2 seconds on weak signal | pending (Trav) |
-| Tests pass; dump before migration; memory under limits; web and APK same commit | 60 backend, 24 frontend, build passes; deploy pending |
+| Tests pass; dump before migration; memory under limits; web and APK same commit | 60 backend, 24 frontend, build passes; web and APK both `34e78f8` |
 
 ## 11. Spec 5b: plate math, gear, export
 
