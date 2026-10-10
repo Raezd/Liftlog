@@ -43,7 +43,7 @@ export default function Library() {
         <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
           {list.data.map((e) => (
             <li key={e.id}>
-              <Link to={`/library/${e.id}`} className="block px-4 py-3 hover:bg-sunken focus-visible:bg-sunken">
+              <Link to={`/exercises/${e.id}`} className="block px-4 py-3 hover:bg-sunken focus-visible:bg-sunken">
                 <span className="flex items-start justify-between gap-2">
                   <span className="font-bold">{e.name}</span>
                   {e.needs_review && <Badge>Needs review</Badge>}

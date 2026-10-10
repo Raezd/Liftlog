@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Capacitor } from "@capacitor/core";
-import { StrictMode, useEffect } from "react";
+import { StrictMode, Suspense, lazy, useEffect, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
@@ -24,6 +24,11 @@ import Workout from "./pages/Workout";
 import { WorkoutDone, WorkoutFinish } from "./pages/WorkoutFinish";
 import WorkoutView from "./pages/WorkoutView";
 import "./styles.css";
+
+// The chart pages carry ECharts, so they load on first use.
+const ExerciseView = lazy(() => import("./pages/ExerciseView"));
+const MuscleVolume = lazy(() => import("./pages/MuscleVolume"));
+const later = (page: ReactNode) => <Suspense fallback={<p className="text-muted" role="status">Loading...</p>}>{page}</Suspense>;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,6 +86,8 @@ const router = createBrowserRouter([{ element: <Root />, children: [
       { path: "/routines/:id/versions", element: <RoutineVersions /> },
       { path: "/routines/:id/versions/:vid", element: <RoutineVersionPage /> },
       { path: "/history", element: <History /> },
+      { path: "/history/muscles", element: later(<MuscleVolume />) },
+      { path: "/exercises/:id", element: later(<ExerciseView />) },
       { path: "/workouts/:id", element: <WorkoutView /> },
       { path: "/library", element: <Library /> },
       { path: "/library/add", element: <ExerciseAdd /> },

@@ -160,11 +160,13 @@ function setSets(key: string, fn: (sets: ActiveSet[]) => ActiveSet[]) {
   return update((x) => ({ ...x, exercises: x.exercises.map((e) => (e.key === key ? { ...e, sets: fn(e.sets) } : e)) }));
 }
 
+const UP_NEXT = "Up next: ";
+
 /** The next card's exercise, or the exercises of the next superset. Never the current one. */
 function upNextLabel(items: ActiveExercise[], key: string): string {
   const us = units(items);
   const after = us[us.findIndex((u) => u.some((x) => x.key === key)) + 1];
-  return after ? `Up next: ${after.map((x) => x.name).join(", ")}` : "Last exercise";
+  return after ? `${UP_NEXT}${after.map((x) => x.name).join(", ")}` : "Last exercise";
 }
 
 /** Completes or un-completes a set. Completing starts the rest when it's due; un-completing ends any rest. */
@@ -467,19 +469,25 @@ function SetRow({ e, s, l, up, heavy, onMenu, onDone, onPlates, problem }: {
 function RestBar({ w, now }: { w: ActiveWorkout; now: number }) {
   const r = w.rest!;
   const left = Math.max(0, Math.ceil((r.endsAt - now) / 1000));
+  const next = r.label.startsWith(UP_NEXT) ? r.label.slice(UP_NEXT.length) : null;
   return (
-    <section aria-label="Rest timer" className="mb-1 flex items-center gap-2 rounded-2xl border border-accent-strong bg-surface p-2">
-      <div className="min-w-0 flex-1 pl-1">
-        <p className="num display text-3xl font-extrabold" aria-live="off">{duration(left)}</p>
-        <p className="truncate text-sm text-muted">{r.label}</p>
+    <section aria-label="Rest timer" className="mb-1 rounded-2xl border border-accent-strong bg-surface p-2">
+      <div className="flex items-center gap-2">
+        <p className="num display min-w-0 flex-1 pl-1 text-3xl font-extrabold" aria-live="off">{duration(left)}</p>
+        <button type="button" onClick={() => void shiftRest(-REST_STEP)} className="inline-flex size-12 items-center justify-center rounded-xl border border-line bg-sunken font-bold">
+          <span aria-hidden>-15</span><span className="sr-only">15 seconds less</span>
+        </button>
+        <button type="button" onClick={() => void shiftRest(REST_STEP)} className="inline-flex size-12 items-center justify-center rounded-xl border border-line bg-sunken font-bold">
+          <span aria-hidden>+15</span><span className="sr-only">15 seconds more</span>
+        </button>
+        <Button onClick={() => void stopRest()}>Skip</Button>
       </div>
-      <button type="button" onClick={() => void shiftRest(-REST_STEP)} className="inline-flex size-12 items-center justify-center rounded-xl border border-line bg-sunken font-bold">
-        <span aria-hidden>-15</span><span className="sr-only">15 seconds less</span>
-      </button>
-      <button type="button" onClick={() => void shiftRest(REST_STEP)} className="inline-flex size-12 items-center justify-center rounded-xl border border-line bg-sunken font-bold">
-        <span aria-hidden>+15</span><span className="sr-only">15 seconds more</span>
-      </button>
-      <Button onClick={() => void stopRest()}>Skip</Button>
+      {/* Every name in full, wrapping onto as many lines as it takes. */}
+      {next ? (
+        <p className="mt-1 px-1 break-words"><span className="block text-muted">Up next</span><span className="font-bold">{next}</span></p>
+      ) : (
+        <p className="mt-1 px-1 break-words text-muted">{r.label}</p>
+      )}
     </section>
   );
 }

@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Badge, Button, Card, Chip, ErrorText, Page, SelectField, TextField, btn } from "../components/ui";
 import { api } from "../lib/api";
 import { EQUIPMENT, plural, shortDate } from "../lib/format";
+import { refresh } from "../lib/offline";
 import { useMuscleLabels } from "../lib/queries";
 import type { CatalogEntry, Counts, Equipment, ImportPreview, ImportResult, LoggingType, TitleReview } from "../lib/types";
 import { EQUIPMENT_OPTIONS, LOGGING_OPTIONS, useCatalogSearch } from "./ExerciseAdd";
@@ -85,6 +86,7 @@ export default function Import() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["workouts"] });
+      void refresh(true); // History, records, and muscle volume read the copy.
       void qc.invalidateQueries({ queryKey: ["exercises"] });
     },
   });

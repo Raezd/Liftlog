@@ -12,7 +12,7 @@ import { Button, btn } from "./ui";
 const links = [
   { to: "/", label: "Routines", icon: ListChecks, also: ["/routines"] },
   { to: "/history", label: "History", icon: History, also: ["/workouts"] },
-  { to: "/library", label: "Library", icon: Dumbbell, also: [] },
+  { to: "/library", label: "Library", icon: Dumbbell, also: ["/exercises"] },
   { to: "/settings", label: "Settings", icon: Settings, also: [] },
 ];
 

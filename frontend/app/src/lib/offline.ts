@@ -35,9 +35,11 @@ export type OfflineState = {
   problem: string | null;
   /** Signed in as someone else while this phone holds the previous login's unsynced workouts. */
   blocked: { cached: string; current: string } | null;
+  /** The first refresh of the copy has finished, whether or not it worked. */
+  refreshed: boolean;
 };
 
-let state: OfflineState = { ready: false, copy: null, queue: [], hasActive: false, syncing: false, problem: null, blocked: null };
+let state: OfflineState = { ready: false, copy: null, queue: [], hasActive: false, syncing: false, problem: null, blocked: null, refreshed: false };
 const listeners = new Set<() => void>();
 
 function set(next: Partial<OfflineState>) {
@@ -129,11 +131,15 @@ export function refresh(force = false): Promise<void> {
     }
     // "clear" and "keep" both replace the copy. Anything left in the queue or
     // in progress belongs to some other login and waits for it.
+    // Kept in memory even if the device won't store it (a private browser window).
     await write(["cache"], (s) => {
       s.cache.put({ login: data.me.login, fetched_at: new Date().toISOString(), data } satisfies CacheRecord, "copy");
-    });
+    }).catch(() => {});
     set({ copy: data, blocked: null });
-  })().finally(() => { refreshing = null; });
+  })().finally(() => {
+    refreshing = null;
+    if (!state.refreshed) set({ refreshed: true });
+  });
   return refreshing;
 }
 

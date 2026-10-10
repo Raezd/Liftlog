@@ -2,8 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { Badge, ErrorText, Loading, Page } from "../components/ui";
 import { get } from "../lib/api";
-import { SET_TYPE, SET_TYPE_SHORT, duration } from "../lib/format";
-import type { RoutineDetail, RoutineSetT, RoutineVersion, VersionSummary } from "../lib/types";
+import type { ReactNode } from "react";
+import { duration, setLabels, shortDate } from "../lib/format";
+import type { RoutineDetail, RoutineSetT, RoutineVersion, SetType, VersionSummary } from "../lib/types";
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -26,10 +27,24 @@ export function RoutineVersions() {
               <Link to={`/routines/${id}/versions/${v.id}`} className="flex items-center justify-between gap-2 px-4 py-3 hover:bg-sunken focus-visible:bg-sunken">
                 <span>
                   <span className="block font-bold">Version {v.number}</span>
-                  <span className="block text-sm text-muted">{when(v.created_at)}</span>
+                  <span className="block text-sm text-muted">Saved {when(v.created_at)}</span>
                 </span>
                 {v.current && <Badge>Current</Badge>}
               </Link>
+              {v.workouts.length > 0 && (
+                <div className="px-4 pb-3">
+                  <p className="text-sm text-muted">Workouts that used it</p>
+                  <ul>
+                    {v.workouts.map((w) => (
+                      <li key={w.id}>
+                        <Link to={`/workouts/${w.id}`} className="flex min-h-11 items-center gap-2 text-accent-text underline underline-offset-2">
+                          {shortDate(w.workout_date)}, {w.title}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -50,6 +65,28 @@ function targetText(s: RoutineSetT): string {
 
 const SUPERSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+/** Sets as numbered on screen: W for warm-ups, working sets from 1, drop and failure tagged. */
+export function SetRows<S extends { id: string; set_type: SetType }>({ sets, text, extra }: {
+  sets: S[]; text: (s: S) => string; extra?: (s: S) => ReactNode;
+}) {
+  const labels = setLabels(sets);
+  return (
+    <ol className="mt-2">
+      {sets.map((s, i) => (
+        <li key={s.id} className="num flex flex-wrap items-baseline gap-x-3 border-t border-line py-2">
+          <span className="w-6 shrink-0 font-bold text-muted" aria-hidden>{labels[i].label}</span>
+          <span className="sr-only">{labels[i].name}{labels[i].tag && `, ${labels[i].tag.toLowerCase()}`}: </span>
+          <span className="min-w-0 flex-1">
+            {text(s)}
+            {labels[i].tag && <span className="ml-2 text-sm font-bold text-accent-text" aria-hidden>{labels[i].tag}</span>}
+          </span>
+          {extra?.(s)}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** A routine version, read-only. */
 export function VersionView({ v }: { v: RoutineVersion }) {
   return (
@@ -66,17 +103,7 @@ export function VersionView({ v }: { v: RoutineVersion }) {
             )}
             {e.rest_seconds !== null && <p className="text-sm text-muted">Rest {duration(e.rest_seconds)}</p>}
             {e.notes && <p className="mt-1 whitespace-pre-line text-sm">{e.notes}</p>}
-            <ol className="mt-2">
-              {e.sets.map((s, i) => (
-                <li key={s.id} className="num flex gap-3 border-t border-line py-2">
-                  <span className="w-6 text-muted">{i + 1}</span>
-                  <span className="w-6 font-bold text-accent-text">
-                    <span aria-hidden>{SET_TYPE_SHORT[s.set_type]}</span><span className="sr-only">{SET_TYPE[s.set_type]}</span>
-                  </span>
-                  <span>{targetText(s)}</span>
-                </li>
-              ))}
-            </ol>
+            <SetRows sets={e.sets} text={targetText} />
           </li>
         );
       })}
@@ -96,7 +123,7 @@ export function RoutineVersionPage() {
         <>
           <p className="-mt-3 mb-4 text-muted">Saved {when(q.data.created_at)}</p>
           <VersionView v={q.data} />
-          <p className="mt-4 text-sm text-muted">W is a warm-up, D a drop set, F a set to failure.</p>
+          <p className="mt-4 text-sm text-muted">W is a warm-up. Working sets count from 1.</p>
         </>
       )}
     </Page>

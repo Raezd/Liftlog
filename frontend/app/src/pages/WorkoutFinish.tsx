@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Star } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button, Card, Loading, Page, TextField, btn } from "../components/ui";
@@ -6,7 +6,9 @@ import { finish, update, useActive } from "../lib/active";
 import { duration, plural } from "../lib/format";
 import { useOffline } from "../lib/offline";
 import { finishCounts, heavySets, history, summarize, toUpload, type Summary } from "../lib/session";
+import { recordsFor, type PR } from "../lib/stats";
 import type { LoggingType } from "../lib/types";
+import { RECORD_NAME, recordText, useStats } from "../lib/useStats";
 import { formatVolume } from "../lib/volume";
 import { stopRest } from "../timer/useRest";
 import { DiscardSheet, NoWorkout, isNative } from "./Workout";
@@ -114,12 +116,38 @@ export function WorkoutDone() {
           </div>
         ))}
       </dl>
+      <NewRecords id={id} />
       <p role="status" className="mb-5 text-muted">
         {!waiting ? "Uploaded." : waiting.error ? `The server didn't take it: ${waiting.error} It's kept on this phone under Needs attention.`
           : off.syncing ? "Uploading..." : "Saved on this phone. It uploads when you're back online."}
       </p>
       <Link to="/" className={`${btn.primary} w-full`}>Done</Link>
     </Screen>
+  );
+}
+
+/** The records this workout earned, per exercise, judged against everything
+ *  on this phone that started before it. */
+function NewRecords({ id }: { id: string }) {
+  const { stats } = useStats();
+  const prs = useMemo(() => (stats ? recordsFor(stats.workouts, id, stats.logging) : []), [stats, id]);
+  if (!stats || !prs.length) return null;
+  const byExercise = new Map<string, PR[]>();
+  for (const p of prs) byExercise.set(p.exercise_id, [...(byExercise.get(p.exercise_id) ?? []), p]);
+  return (
+    <section aria-label="New records" className="mb-5 rounded-2xl border border-accent-strong bg-surface p-4">
+      <h2 className="display mb-2 flex items-center gap-2 text-lg font-bold"><Star size={20} aria-hidden fill="currentColor" className="text-accent-text" />{prs.length === 1 ? "New record" : `${prs.length} new records`}</h2>
+      <ul className="space-y-2">
+        {[...byExercise].map(([exerciseId, list]) => (
+          <li key={exerciseId}>
+            <p className="font-bold">{stats.exercises.get(exerciseId)?.name ?? "Exercise"}</p>
+            <ul className="num text-sm">
+              {list.map((p) => <li key={p.type}>{RECORD_NAME[p.type]}: {recordText(p, stats.me.weight_unit)}</li>)}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

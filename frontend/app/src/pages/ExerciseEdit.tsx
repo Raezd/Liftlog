@@ -5,6 +5,7 @@ import { MusclePicker } from "../components/MusclePicker";
 import { Badge, Button, Card, ErrorText, Loading, Page, SelectField, TextField } from "../components/ui";
 import { get, send } from "../lib/api";
 import { shortDate } from "../lib/format";
+import { refresh } from "../lib/offline";
 import { weightText } from "../lib/plates";
 import { useMuscleLabels } from "../lib/queries";
 import { FIELDS } from "../lib/session";
@@ -42,6 +43,8 @@ export default function ExerciseEdit() {
       qc.setQueryData(["exercise", id], data);
       void qc.invalidateQueries({ queryKey: ["exercises"] });
       void qc.invalidateQueries({ queryKey: ["workout"] });
+      void refresh(true); // History, records, and muscle volume read the copy.
+      void qc.invalidateQueries({ queryKey: ["exercise-basic"] });
       setSaved(true);
     },
   });
@@ -52,7 +55,7 @@ export default function ExerciseEdit() {
   ].join("");
 
   return (
-    <Page title={ex?.name ?? "Exercise"} back="/library">
+    <Page title={ex?.name ?? "Exercise"} back={`/exercises/${id}`}>
       {q.isPending && <Loading />}
       <ErrorText error={q.error} />
       {ex && form && (

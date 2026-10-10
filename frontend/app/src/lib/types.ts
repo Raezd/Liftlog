@@ -83,6 +83,10 @@ export type WorkoutDetail = Omit<WorkoutSummary, "exercise_count" | "set_count">
   /** The routine version it started from, and that version's routine. Null for imports and empty workouts. */
   routine_version_id: string | null;
   routine_id: string | null;
+  /** The routine's name and the version's number and save date. Missing in copies saved before Spec 6. */
+  routine_name?: string | null;
+  routine_version_number?: number | null;
+  routine_version_created_at?: string | null;
   exercises: {
     id: string;
     exercise_id: string;
@@ -194,7 +198,11 @@ export type Folder = { id: string; name: string; position: number; archived: boo
 
 export type RoutineList = { folders: Folder[]; routines: RoutineSummary[] };
 
-export type VersionSummary = { id: string; number: number; created_at: string; current: boolean };
+export type VersionSummary = {
+  id: string; number: number; created_at: string; current: boolean;
+  /** Your workouts that started from it, newest first. */
+  workouts: { id: string; title: string; workout_date: string }[];
+};
 
 /** GET /api/offline: everything the phone keeps for offline use. */
 export type OfflineCopy = {

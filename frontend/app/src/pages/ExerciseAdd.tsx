@@ -5,6 +5,7 @@ import { MusclePicker } from "../components/MusclePicker";
 import { Badge, Button, Card, ErrorText, Page, SelectField, TextField } from "../components/ui";
 import { get, send } from "../lib/api";
 import { EQUIPMENT, LOGGING } from "../lib/format";
+import { refresh } from "../lib/offline";
 import { useMuscleLabels } from "../lib/queries";
 import type { CatalogEntry, Equipment, Exercise, LoggingType } from "../lib/types";
 
@@ -33,6 +34,7 @@ export default function ExerciseAdd() {
     mutationFn: (body: object) => send<Exercise>("POST", "/api/exercises", body),
     onSuccess: (ex) => {
       void qc.invalidateQueries({ queryKey: ["exercises"] });
+      void refresh(true); // History, records, and muscle volume read the copy.
       navigate(`/library/${ex.id}`);
     },
   });

@@ -7,7 +7,7 @@ import { ExerciseOrder } from "../components/ExerciseOrder";
 import { moved } from "../components/Sortable";
 import { Badge, Button, ErrorText, Loading, Page, SelectField, TextField, btn } from "../components/ui";
 import { ApiError, get, send } from "../lib/api";
-import { LOGGING, SET_TYPE, duration } from "../lib/format";
+import { LOGGING, SET_TYPE, duration, setLabels } from "../lib/format";
 import { uuid7 } from "../lib/ids";
 import { useMe } from "../lib/queries";
 import { canStep, describeExercise, describeUnit, moveUnit, removeExercise, stepExercise, supersetLetters, unitIndexAt, units } from "../lib/reorder";
@@ -326,6 +326,7 @@ function ExerciseCard({ e, index, count, unit, chain, letter, canLink, canStepUp
   onChange: (next: Partial<EEx>) => void; onRemove: () => void;
 }) {
   const f = FIELDS[e.logging_type];
+  const labels = setLabels(e.sets);
   const setSet = (k: number, next: Partial<ESet>) => onChange({ sets: e.sets.map((s, j) => (j === k ? { ...s, ...next } : s)) });
   const firstInChain = chain !== null && chain[0] === index;
   const id = `ex-${e.key}`;
@@ -376,23 +377,26 @@ function ExerciseCard({ e, index, count, unit, chain, letter, canLink, canStepUp
 
       <h4 className="sr-only">Sets</h4>
       <ol className="space-y-2">
-        {e.sets.map((s, k) => (
-          <li key={s.key} className="rounded-xl bg-sunken p-2" aria-label={`Set ${k + 1}`}>
+        {e.sets.map((s, k) => {
+          const l = labels[k];
+          const name = l.name.toLowerCase();
+          return (
+          <li key={s.key} className="rounded-xl bg-sunken p-2" aria-label={l.name}>
             <div className="flex items-center gap-1">
-              <span className="num w-12 shrink-0 pl-1 font-bold">Set {k + 1}</span>
+              <span className="num w-12 shrink-0 pl-1 font-bold" aria-hidden>{l.label}</span>
               <label className="min-w-0 flex-1">
-                <span className="sr-only">Set {k + 1} type</span>
+                <span className="sr-only">{l.name} type</span>
                 <select value={s.set_type} onChange={(x) => setSet(k, { set_type: x.target.value as SetType })}
                   className="block min-h-11 w-full rounded-xl border border-line bg-ground px-2">
                   {SET_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </label>
-              <IconButton label={`Move set ${k + 1} up`} disabled={k === 0} onClick={() => onChange({ sets: moved(e.sets, k, k - 1) })}><ArrowUp size={18} aria-hidden /></IconButton>
-              <IconButton label={`Move set ${k + 1} down`} disabled={k === e.sets.length - 1} onClick={() => onChange({ sets: moved(e.sets, k, k + 1) })}><ArrowDown size={18} aria-hidden /></IconButton>
-              <IconButton label={`Remove set ${k + 1}`} onClick={() => onChange({ sets: e.sets.filter((_, j) => j !== k) })}><Trash2 size={18} aria-hidden /></IconButton>
+              <IconButton label={`Move ${name} up`} disabled={k === 0} onClick={() => onChange({ sets: moved(e.sets, k, k - 1) })}><ArrowUp size={18} aria-hidden /></IconButton>
+              <IconButton label={`Move ${name} down`} disabled={k === e.sets.length - 1} onClick={() => onChange({ sets: moved(e.sets, k, k + 1) })}><ArrowDown size={18} aria-hidden /></IconButton>
+              <IconButton label={`Remove ${name}`} onClick={() => onChange({ sets: e.sets.filter((_, j) => j !== k) })}><Trash2 size={18} aria-hidden /></IconButton>
             </div>
             <div className="mt-1 grid grid-cols-2 gap-x-2">
-              {f.reps && <RepsField s={s} n={k + 1} onChange={(next) => setSet(k, next)} />}
+              {f.reps && <RepsField s={s} name={l.name} onChange={(next) => setSet(k, next)} />}
               {f.weight && (
                 <SmallField label={f.weight} suffix={s.weight_unit} inputMode="decimal" value={s.weight}
                   onChange={(v) => setSet(k, { weight: v, weight_unit: s.weight ? s.weight_unit : unit })} />
@@ -416,7 +420,8 @@ function ExerciseCard({ e, index, count, unit, chain, letter, canLink, canStepUp
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ol>
       <Button variant="quiet" className="mt-1 w-full" onClick={() => onChange({ sets: [...e.sets, blankSet(unit, e.sets[e.sets.length - 1])] })}>
         <Plus size={18} aria-hidden /> Add set<span className="sr-only"> to {e.name}</span>
@@ -440,21 +445,21 @@ function SmallField({ label, suffix, value, onChange, ...rest }: {
   );
 }
 
-function RepsField({ s, n, onChange }: { s: ESet; n: number; onChange: (next: Partial<ESet>) => void }) {
+function RepsField({ s, name, onChange }: { s: ESet; name: string; onChange: (next: Partial<ESet>) => void }) {
   const input = "num block min-h-11 w-full min-w-0 rounded-xl border border-line bg-ground px-2";
   return (
     <fieldset className="col-span-2 mt-1">
       <legend className="text-sm font-bold">Reps</legend>
       <div className="flex items-center gap-2">
         <label className="min-w-0 flex-1">
-          <span className="sr-only">{s.range ? `Set ${n} fewest reps` : `Set ${n} reps`}</span>
+          <span className="sr-only">{s.range ? `${name} fewest reps` : `${name} reps`}</span>
           <input inputMode="numeric" value={s.reps_min} onChange={(e) => onChange({ reps_min: e.target.value })} className={input} />
         </label>
         {s.range && (
           <>
             <span aria-hidden>to</span>
             <label className="min-w-0 flex-1">
-              <span className="sr-only">Set {n} most reps</span>
+              <span className="sr-only">{name} most reps</span>
               <input inputMode="numeric" value={s.reps_max} onChange={(e) => onChange({ reps_max: e.target.value })} className={input} />
             </label>
           </>

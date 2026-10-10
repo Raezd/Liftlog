@@ -50,7 +50,7 @@ export default function RoutineView() {
           {starter.problem && <p role="alert" className="mb-3 font-bold text-over">{starter.problem}</p>}
           {starter.sheet}
           <VersionView v={r.current_version} />
-          <p className="mt-4 text-sm text-muted">W is a warm-up, D a drop set, F a set to failure.</p>
+          <p className="mt-4 text-sm text-muted">W is a warm-up. Working sets count from 1.</p>
           <Link to={`/routines/${id}/versions`} className={`${btn.quiet} mt-2 w-full`}><History size={18} aria-hidden /> Versions</Link>
         </>
       )}

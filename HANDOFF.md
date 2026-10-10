@@ -195,7 +195,7 @@ Trav ran all of them on both phones and reported that everything passed, both sc
 
 ### The rest of v1
 
-The remaining order: 3 data model, exercise library, and Hevy import (done, section 6); 4 routines (done, section 7); 5a workout card flow, offline storage and sync, finish (built, section 9); 5b plate math and export; 6 history, PRs, charts, body-part volume, editing finished workouts; 7 measurements and the Foodlog summary API.
+The remaining order: 3 data model, exercise library, and Hevy import (done, section 6); 4 routines (done, section 7); 5a workout card flow, offline storage and sync, finish (built, section 9); 5b plate math and export; 6 history, PRs, charts, body-part volume (done, section 13); 6b editing finished workouts; 7 measurements and the Foodlog summary API.
 
 ## 6. Spec 3: data model, exercise library, Hevy import
 
@@ -405,10 +405,52 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Export button opens the page in the browser, and an export downloads there | pending on phone |
 | Tests pass; dump before deploy; memory under limits; web and APK same commit | 68 backend, 44 frontend, build passes; dump written first; all under limits; matched when checked |
 
-## 13. Known gaps
+## 13. Spec 6: records, calendar, exercise pages, body-part volume, version links
+
+**Status:** built and tested. No migration. Not deployed by this session; check what's live with the commands in section 3. Phone and browser checks are Trav's (table below). Rules are in `CLAUDE.md` (Records, charts, and body-part volume).
+
+- **HANDOFF.md** no longer records deploy status anywhere; section 3 has the live checks, and `CLAUDE.md` (Workflow) says deploy status only comes from them.
+- **Computed on read:** records, estimated 1RM, per-session numbers, and hard sets per muscle are pure functions in `src/lib/stats.ts`, run on the offline copy plus queued workouts. Nothing is stored.
+- **History** (`/history`): List and Calendar, both from the copy, so they work offline. Workouts on the phone show labeled Waiting to upload or Needs attention. **Muscles** (`/history/muscles`, button at the top of History): weekly hard sets table and an 8-week chart per muscle.
+- **Workout view:** works offline (copy fallback), and opens queued workouts read-only. Exercise names link to their page. Record sets carry tags; a session volume record shows under the exercise name. Started-from routine and version save date link to Versions. Sets numbered W, 1, 2.
+- **Exercise page** (`/exercises/{id}`; Library rows open it, Edit goes to the old editor): current records with dates and links, trend chart, every session newest first.
+- **Finish summary:** lists new records per exercise, judged against everything on the phone that started earlier.
+- **Versions page:** each version lists the workouts that used it, by date, linking to them.
+- **Server:** workout responses add `routine_name`, `routine_version_number`, `routine_version_created_at`; the versions list adds `workouts` (the caller's only).
+- **Set numbering** on the routine view, version pages, and routine editor (W, then 1, 2, ...). **Up next** in the rest bar now sits on its own full-width line under the timer and wraps.
+- **ECharts 6.1.0** (same as Foodlog), pinned; the chart pages are lazy-loaded so the main bundle stays about the same size (ECharts is a separate 175 kB gzipped chunk).
+- **Tests:** 69 backend (one new: workouts name their routine version, the versions list holds only the caller's workouts, and another user's versions list and version are 404), 55 frontend (new `tests/stats.test.ts`: every record type, dominance, ties, the baseline, warm-ups, 0.05 kg across units, imported and queued workouts, best set per workout, no 1RM for weighted bodyweight, Epley, the finish summary, body-part volume weights, unassigned, Monday weeks and the 4 AM rollover).
+- **Checked once, not kept:** the functions on a read-only export of the live history: heaviest bench is 225 lb on Oct 10, 2026, matching a SQL query, and last week's (Sep 28) chest count was 4 by both the function and a hand-count query. The new pages rendered in headless Chromium at 360 px wide, light and dark, with no page overflow and no console errors.
+
+### Choices made while building (not in the spec)
+
+- History, the calendar, and the stats pages read the offline copy on the web too (refreshed when they open, after imports and exercise edits). The paged `GET /api/workouts` is no longer used by the app.
+- Weight records need at least 1 rep. A record also needs an earlier value of that type to beat, so the first session with, say, a weighted set is that type's baseline.
+- If several sets in one workout qualify for best reps at a weight, the heaviest (then the most reps) is the record.
+- Volumes count as equal within 0.05 kg per rep; distances within half a millimeter.
+- The exercise page shows the frontier of best reps at each weight (up to 8, heaviest first).
+- Assisted exercises show "No records for assisted exercises yet." and no chart.
+- In the Muscles chart, a week with no workouts has no bar; a week with workouts but none for that muscle shows 0.
+- The calendar starts on Monday, like the volume weeks.
+
+| Check | Result |
+|---|---|
+| HANDOFF.md has no deployed version line and shows the live-check commands | done |
+| Trav's heaviest bench and its date on the exercise page match his history | 225 lb, Oct 10, 2026 on the live data; pending on the page |
+| A record shows on the finish summary and its set is tagged on the detail page | tested; tags seen in headless Chromium; pending on phone |
+| Airplane mode: a just-finished workout shows as Waiting to upload with its records counted; the label clears after upload | pending on phone |
+| Calendar marks this month's workout days | Oct 5, 6, 7, 9, 10 marked in headless Chromium; pending on the real page |
+| Last week's chest number matches a hand count | 4 and 4 (Sep 28 week, live data) |
+| Workout detail names its routine version; Versions lists that workout | tested; pending on the page |
+| Wife sees only her own records and volume | computed only from her own copy; versions list isolation tested; pending on her phone |
+| Tests pass; dump first; memory under limits; web and APK same commit | 69 backend, 55 frontend, build passes; deploy pending (Trav) |
+| Routine with two warm-ups shows W, W, 1 on its view page and in the editor | pending on the page |
+| Three-exercise superset shows every name in full under Up next at normal text size | pending on phone |
+
+## 14. Known gaps
 
 - Routine editing needs a connection. Offline editing comes after v1 (the conflict check and client ids are ready for it).
-- History and the workout view are online only. A workout waiting to upload shows in the unsynced count, not in History, until it uploads.
+- Editing finished workouts (Spec 6b). Records for assisted exercises.
 - The triggers' escape hatch is a transaction-local setting, so someone with direct database access can still set it by hand. The rule they enforce is against accidents and app bugs, not the database owner.
 - Deleting a user who has finished workouts is refused by the triggers (no flow deletes users).
 - Reordering while archived routines are hidden leaves their positions alone, so a restored one can land between others.
