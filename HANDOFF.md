@@ -170,6 +170,8 @@ scripts/android-publish.sh    # newest build to /download
 3. Tap Install (or Update). Updates keep data because every build is signed with the same key.
 4. First launch: allow notifications.
 
+From the app: Settings, About, shows the installed version and an Update app button that opens `/download` in the phone's browser. When `/download` serves a different version, Settings also shows "Update available" with it (section 15).
+
 ### Acceptance tests (both phones, airplane mode, stopwatch, pass = within 2 s)
 
 Trav ran all of them on both phones and reported that everything passed, both scheduling paths included. Per-test stopwatch times weren't recorded.
@@ -485,7 +487,30 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Wife can't see, edit, or delete his workouts, and can edit and delete her own | tested; pending on her phone |
 | Tests pass; dump first; memory under limits; web and APK same commit | 86 backend, 59 frontend, build passes; deploy and APK: check live (section 3) |
 
-## 15. Known gaps
+## 15. App update in Settings
+
+**Status:** built and tested. No migration, no new route, no plugin or permission. Rules are in `CLAUDE.md` (App updates). What's deployed comes only from the live checks in section 3.
+
+- **Root cause:** no commit removed it. The Android app's Settings has never had an update link. Since Spec 3 (`688e3de`) the About card's `/download` link, Get the Android app, has been browser only (`Capacitor.isNativePlatform()`); in the app that slot held Rest timer test. Spec 5a (`3a3e271`) removed the timer test screen and left the slot empty in the app. Specs 6 and 6b never touched `Settings.tsx` (last changed in Spec 5b, `99a0d52`, which only added cards). Nothing else was hidden by any of those changes; the timer test's removal was intended and is recorded in section 5. The link that was seen was most likely Settings in a phone's browser, or `/download` opened by hand.
+- **Settings, About:** Version shows `__BUILD_ID__`, which in the APK is its version name (like `32-55487bd`, the same as `/download`) and on the web the short commit. In the app, Update app opens `/download` in the phone's browser (a link to the server's host, like Export). In a browser, the plain Get the Android app link stays.
+- **Update available:** when Settings opens in the app with a connection, it fetches `GET /api/app/latest` (the `/download` page's own source, `data/apk/version.json`; the app already reached it through the auth middleware and CORS) and compares `version_name` with the installed version. Different: "Update available", the new version, and an Update button to `/download`. Same, offline, a failed fetch, or no version: nothing.
+- **Tests:** 86 backend (unchanged), 63 frontend (new `tests/appUpdate.test.ts`: the same version shows no notice; a different one shows it, older too; a failed fetch shows nothing; a missing, empty, or non-text version shows nothing).
+
+### Choices made while building (not in the spec)
+
+- One check per Settings visit: it runs when Settings mounts with a connection; it doesn't recheck on focus or when the network comes back while Settings is open. Going offline hides a notice already shown.
+- The notice's button reads "Update to <version>"; the always-there button reads "Update app".
+- A test build made with `ALLOW_DIRTY=1` has a version name ending in `-dirty`, which `__BUILD_ID__` cuts to 12 characters, so it always shows Update available. Published builds are clean.
+
+| Check | Result |
+|---|---|
+| Both phones: Settings shows the installed version, and Update app opens `/download` in the browser | pending on phones (Trav) |
+| Desktop browser: Settings shows the link and the build version | unchanged code path; pending in the browser |
+| Airplane mode: Settings shows the version and no notice | rule tested; pending on phone |
+| Next deploy (Spec 7): both phones show Update available with the new version, the button opens `/download`, and the notice is gone after installing | pending at Spec 7 |
+| Tests pass; dump first; memory under limits; web and APK same commit | 86 backend, 63 frontend, build passes; deploy and APK are Trav's to run, then check live (section 3) |
+
+## 16. Known gaps
 
 - Routine editing needs a connection. Offline editing comes after v1 (the conflict check and client ids are ready for it).
 - Records for assisted exercises. Undoing an edit or delete, and a screen for browsing the change log, are out of scope for v1. Flagging long workouts at finish is banked.

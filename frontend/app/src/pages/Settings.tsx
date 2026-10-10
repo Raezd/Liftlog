@@ -1,12 +1,15 @@
 import { Capacitor } from "@capacitor/core";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, ErrorText, Loading, Page, Segmented, SelectField, TextField, btn } from "../components/ui";
-import { send } from "../lib/api";
+import { API_BASE, get, send } from "../lib/api";
+import { checkForUpdate } from "../lib/appUpdate";
 import { refresh } from "../lib/offline";
 import { useMe } from "../lib/queries";
 import type { DistanceUnit, Me, WeightUnit } from "../lib/types";
+import { useOnline } from "../lib/useOnline";
 import { rememberAlertSetting } from "../timer/alertSetting";
 
 function timezones(current: string): [string, string][] {
@@ -100,8 +103,49 @@ export default function Settings() {
           <div className="flex justify-between gap-3 py-1"><dt className="text-muted">Signed in as</dt><dd className="break-all font-bold">{me.data?.login ?? "..."}</dd></div>
           <div className="flex justify-between gap-3 py-1"><dt className="text-muted">Version</dt><dd className="font-bold">{__BUILD_ID__}</dd></div>
         </dl>
-        {!Capacitor.isNativePlatform() && <a href="/download" className={`${btn.secondary} mt-3 w-full`}>Get the Android app</a>}
+        {Capacitor.isNativePlatform()
+          ? <AppUpdate />
+          : <a href="/download" className={`${btn.secondary} mt-3 w-full`}>Get the Android app</a>}
       </Card>
     </Page>
+  );
+}
+
+/**
+ * In the Android app: Update app, plus a notice when /download serves a
+ * different version than this one. Checked once each time Settings opens
+ * with a connection; offline or on any failure there's no notice. Both
+ * buttons are links to /download on the server's host, which Capacitor hands
+ * to the phone's browser (like Export), where the APK downloads and installs.
+ */
+function AppUpdate() {
+  const online = useOnline();
+  const check = useQuery({
+    queryKey: ["app-update"],
+    queryFn: () => checkForUpdate(__BUILD_ID__, () => get<unknown>("/api/app/latest")),
+    enabled: online,
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    networkMode: "always",
+  });
+  const newer = online ? check.data : null;
+  const href = `${API_BASE || window.location.origin}/download`;
+  return (
+    <>
+      {newer && (
+        <div role="status" className="mt-3 rounded-xl border border-line bg-sunken p-3">
+          <p className="font-bold">Update available</p>
+          <p className="mb-3 text-sm text-muted">Version {newer} is ready to download.</p>
+          <a href={href} className={`${btn.primary} w-full`}>
+            <ExternalLink size={18} aria-hidden /> Update to {newer}
+          </a>
+        </div>
+      )}
+      <a href={href} className={`${btn.secondary} mt-3 w-full`}>
+        <ExternalLink size={18} aria-hidden /> Update app<span className="sr-only"> in your browser</span>
+      </a>
+    </>
   );
 }
