@@ -304,3 +304,26 @@ def test_a_workout_whose_routine_was_deleted_lands_without_a_link(client, db):
     assert (up.json()["routine_version_id"], up.json()["routine_id"]) == (None, None)
     with get_sessionmaker()() as s:
         assert s.execute(text("SELECT count(*) FROM routine_versions")).scalar_one() == 0
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    ("weight_value", "225265", "Barbell Bench Press - Medium Grip, set 1: the weight 225265 lb is over the limit of 9999.99."),
+    ("weight_value", "10000", "Barbell Bench Press - Medium Grip, set 1: the weight 10000 lb is over the limit of 9999.99."),
+    ("weight_value", "-5", "Barbell Bench Press - Medium Grip, set 1: the weight can't be negative."),
+    ("weight_value", "137.555", "Barbell Bench Press - Medium Grip, set 1: the weight 137.555 has more than two decimal places."),
+    ("reps", 1000, "Barbell Bench Press - Medium Grip, set 1: reps must be a whole number from 0 to 999."),
+    ("reps", -1, "Barbell Bench Press - Medium Grip, set 1: reps must be a whole number from 0 to 999."),
+])
+def test_bad_set_values_are_refused_with_a_reason_and_nothing_is_written(client, db, field, value, reason):
+    ex = bench(client)
+    body = payload(ex["id"])
+    # The working set, numbered 1 because the warm-up before it isn't counted.
+    body["exercises"][0]["sets"][1][field] = value
+    wid, r = upload(client, body)
+    assert r.status_code == 422
+    assert r.json()["detail"] == {"code": "bad_set", "message": reason}
+    assert counts() == (0, 0, 0)
+    assert client.get(f"/api/workouts/{wid}", headers=TRAV).status_code == 404
+    # The limits themselves are fine.
+    body["exercises"][0]["sets"][1].update(weight_value="9999.99", reps=999)
+    assert upload(client, body, id=wid)[1].status_code == 201

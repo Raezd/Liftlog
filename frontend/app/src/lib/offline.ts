@@ -183,6 +183,11 @@ export function syncNow(only?: string): Promise<void> {
   return syncing;
 }
 
+/** Rereads the queue after another module changed it (Reopen). */
+export async function reloadQueue() {
+  set({ queue: sortQueue(await readAll<Queued>("queue")) });
+}
+
 /** Removes a Needs attention workout from the phone, for good. Never automatic. */
 export async function removeQueued(id: string) {
   await write(["queue"], (s) => s.queue.delete(id));

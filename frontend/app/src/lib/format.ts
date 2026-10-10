@@ -43,3 +43,20 @@ export function minutes(startIso: string, endIso: string | null): string | null 
 }
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+export type SetLabel = { label: string; tag: string | null; name: string };
+
+/**
+ * How sets are numbered on screen: warm-ups show "W" and aren't counted; the
+ * rest are numbered from 1 in order, and drop and failure sets also get a
+ * small tag. Display only: stored positions and prefill never change. The
+ * server names sets the same way in its reasons (app/routers/workouts.py).
+ */
+export function setLabels(sets: { set_type: SetType }[]): SetLabel[] {
+  let warm = 0, work = 0;
+  return sets.map((s) => {
+    if (s.set_type === "warmup") return { label: "W", tag: null, name: `Warm-up ${++warm}` };
+    work += 1;
+    return { label: String(work), tag: s.set_type === "drop" ? "Drop" : s.set_type === "failure" ? "Failure" : null, name: `Set ${work}` };
+  });
+}

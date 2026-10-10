@@ -1,10 +1,11 @@
 import { Capacitor } from "@capacitor/core";
 import { AlertTriangle, CloudUpload, Dumbbell, History, ListChecks, Settings } from "lucide-react";
 import { useState } from "react";
-import { Link, Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { reopenQueued } from "../lib/active";
 import { plural } from "../lib/format";
 import { removeQueued, syncAndRefresh, syncNow, useOffline } from "../lib/offline";
-import type { Queued } from "../lib/session";
+import { REOPEN_BLOCKED, type Queued } from "../lib/session";
 import { Sheet } from "./Sheet";
 import { Button, btn } from "./ui";
 
@@ -82,7 +83,7 @@ function StatusBars() {
                 {plural(attention.length, "workout")} {attention.length === 1 ? "needs" : "need"} attention
               </p>
               <ul className="divide-y divide-line">
-                {attention.map((q) => <NeedsAttention key={q.id} q={q} busy={off.syncing} />)}
+                {attention.map((q) => <NeedsAttention key={q.id} q={q} busy={off.syncing} inProgress={off.hasActive} />)}
               </ul>
             </div>
           )}
@@ -94,7 +95,8 @@ function StatusBars() {
 
 /** A workout the server refused: the reason, and what you can do about it.
  *  Nothing here happens on its own. */
-function NeedsAttention({ q, busy }: { q: Queued; busy: boolean }) {
+function NeedsAttention({ q, busy, inProgress }: { q: Queued; busy: boolean; inProgress: boolean }) {
+  const navigate = useNavigate();
   const [removing, setRemoving] = useState(false);
   const [said, setSaid] = useState("");
   const when = new Date(q.body.started_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -106,15 +108,27 @@ function NeedsAttention({ q, busy }: { q: Queued; busy: boolean }) {
       setSaid("Couldn't copy.");
     }
   };
+  const reopen = async () => {
+    try {
+      const why = await reopenQueued(q.id);
+      if (why) setSaid(why);
+      else navigate("/workout");
+    } catch {
+      setSaid("Couldn't reopen it on this phone. Try again.");
+    }
+  };
+  const native = Capacitor.isNativePlatform();
   return (
     <li className="py-2 pr-1">
       <p className="font-bold">{q.body.title}<span className="font-normal text-muted">, {when}</span></p>
       <p className="text-sm">{q.error}</p>
       <div className="mt-2 flex flex-wrap gap-2">
+        {native && <Button variant="primary" disabled={busy || inProgress} onClick={() => void reopen()}>Reopen</Button>}
         <Button onClick={() => void copy()}>Copy as JSON</Button>
         <Button disabled={busy} onClick={() => void syncNow(q.id)}>Retry</Button>
         <Button className="text-over" onClick={() => setRemoving(true)}>Remove from phone</Button>
       </div>
+      {native && inProgress && <p className="mt-1 text-sm text-muted">To reopen it: {REOPEN_BLOCKED.toLowerCase()}</p>}
       <p role="status" className="text-sm text-muted">{said}</p>
       <Sheet open={removing} title="Remove this workout?" onClose={() => setRemoving(false)}>
         <p className="mb-4">It never reached the server, so once it's removed from this phone it can't be recovered. Copy it as JSON first if you might need it.</p>

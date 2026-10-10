@@ -1,22 +1,22 @@
 import { Capacitor } from "@capacitor/core";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ChevronLeft, ChevronRight, Disc, Minus, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Disc, Minus, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ExerciseOrder } from "../components/ExerciseOrder";
 import { PlateSheet } from "../components/PlateSheet";
 import { Sheet } from "../components/Sheet";
 import { Badge, Button, ErrorText, Loading, Page, btn } from "../components/ui";
 import { currentActive, discard, update, useActive } from "../lib/active";
 import { get } from "../lib/api";
-import { LOGGING, SET_TYPE, SET_TYPE_SHORT, duration, plural } from "../lib/format";
+import { LOGGING, SET_TYPE, duration, plural, setLabels, type SetLabel } from "../lib/format";
 import { cached, useOffline } from "../lib/offline";
 import { gearFor } from "../lib/plates";
 import type { PastSet } from "../lib/prefill";
 import { groupOf, removeExercise, supersetLetters, units } from "../lib/reorder";
 import {
-  FIELDS, MAX_REST, REST_STEP, RPE_VALUES, addedExercise, canLink, history, lastSession, linkWithNext, nextSet,
-  restAfter, restFor, setProblem, upNext, type ActiveExercise, type ActiveSet, type ActiveWorkout, type HistWorkout,
+  FIELDS, INPUT, MAX_REST, REST_STEP, RPE_VALUES, addedExercise, canLink, heaviest, history, lastSession, linkWithNext, nextSet,
+  restAfter, restFor, setProblem, tooHeavy, upNext, type ActiveExercise, type ActiveSet, type ActiveWorkout, type Heaviest, type HistWorkout,
 } from "../lib/session";
 import type { Exercise, LoggingType, Me, SetType, WeightUnit } from "../lib/types";
 import { formatVolume, volume } from "../lib/volume";
@@ -62,6 +62,14 @@ export default function Workout() {
   }, [off.copy]);
   const hist = useMemo(() => history(off.copy?.workouts ?? [], off.queue), [off.copy, off.queue]);
   const unitsOf = off.copy?.me ?? DEFAULT_UNITS;
+  // From the finish screen's weight check: show that set and put the cursor in its weight.
+  const focusSet = (useLocation().state as { focusSet?: string } | null)?.focusSet;
+  useEffect(() => {
+    if (!focusSet || !w) return;
+    const row = document.getElementById(`set-${focusSet}`);
+    row?.scrollIntoView({ block: "center" });
+    row?.querySelector("input")?.focus();
+  }, [focusSet, w?.currentKey]);
 
   if (!isNative()) return <NoWorkout web />;
   if (!loaded) return <div className="p-4"><Loading /></div>;
@@ -105,9 +113,13 @@ export default function Workout() {
             <ChevronLeft size={20} aria-hidden /> Previous
           </Button>
           <span className="num shrink-0 text-sm text-muted">{at + 1} of {us.length}</span>
-          <Button variant="primary" disabled={at >= us.length - 1} onClick={() => go(at + 1)} className="flex-1">
-            Next exercise <ChevronRight size={20} aria-hidden />
-          </Button>
+          {at >= us.length - 1 ? (
+            <Link to="/workout/finish" className={`${btn.primary} flex-1`}>Finish</Link>
+          ) : (
+            <Button variant="primary" onClick={() => go(at + 1)} className="flex-1">
+              Next exercise <ChevronRight size={20} aria-hidden />
+            </Button>
+          )}
         </nav>
       )}
     </div>
@@ -148,6 +160,13 @@ function setSets(key: string, fn: (sets: ActiveSet[]) => ActiveSet[]) {
   return update((x) => ({ ...x, exercises: x.exercises.map((e) => (e.key === key ? { ...e, sets: fn(e.sets) } : e)) }));
 }
 
+/** The next card's exercise, or the exercises of the next superset. Never the current one. */
+function upNextLabel(items: ActiveExercise[], key: string): string {
+  const us = units(items);
+  const after = us[us.findIndex((u) => u.some((x) => x.key === key)) + 1];
+  return after ? `Up next: ${after.map((x) => x.name).join(", ")}` : "Last exercise";
+}
+
 /** Completes or un-completes a set. Completing starts the rest when it's due; un-completing ends any rest. */
 async function toggleDone(key: string, setId: string): Promise<string | null> {
   const w = currentActive();
@@ -171,9 +190,7 @@ async function toggleDone(key: string, setId: string): Promise<string | null> {
   else {
     const r = restAfter(next.exercises, i, k);
     if (r) {
-      const g = groupOf(next.exercises, i);
-      const label = g ? `Next round: ${next.exercises.slice(g[0], g[1] + 1).map((x) => x.name).join(", ")}` : `Next: ${e.name}`;
-      next = withRest(next, r.seconds, r.key, label);
+      next = withRest(next, r.seconds, r.key, upNextLabel(next.exercises, e.key));
     }
   }
   await update(() => next);
@@ -239,15 +256,15 @@ function RestControl({ label, seconds, onAdjust }: { label: string; seconds: num
   );
 }
 
-/** "185 x 5", or with the unit, "185 lb x 5". Warm-ups, drops, and failures get their letter. */
-function pastText(s: PastSet, unit = false): string {
+/** "185 x 5", or with the unit, "185 lb x 5". With its label, "W: 95 x 10" or "3 drop: 135 x 8". */
+function pastText(s: PastSet, unit = false, l?: SetLabel): string {
   const parts: string[] = [];
   if (s.weight_value !== null) parts.push(unit ? `${s.weight_value} ${s.weight_unit}` : s.weight_value);
   if (s.reps !== null) parts.push(s.weight_value !== null ? `x ${s.reps}` : `${s.reps} reps`);
   if (s.distance_value !== null) parts.push(`${s.distance_value} ${s.distance_unit}`);
   if (s.duration_seconds !== null) parts.push(duration(s.duration_seconds));
-  const letter = SET_TYPE_SHORT[s.set_type];
-  return `${letter ? `${letter} ` : ""}${parts.join(" ") || "no data"}`;
+  const text = parts.join(" ") || "no data";
+  return l ? `${l.label}${l.tag ? ` ${l.tag.toLowerCase()}` : ""}: ${text}` : text;
 }
 
 const KG_PER_LB = 0.45359237;
@@ -261,9 +278,10 @@ function LastSession({ hist, exerciseId, logging, unit }: { hist: HistWorkout[];
   const top = work.slice().sort((a, b) => kg(b) - kg(a) || (b.reps ?? 0) - (a.reps ?? 0) || (b.duration_seconds ?? 0) - (a.duration_seconds ?? 0))[0];
   const vol = volume([{ logging_type: logging, sets: last.sets }], unit);
   const when = new Date(last.started_at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const labels = setLabels(last.sets);
   return (
     <div className="mt-1 rounded-xl bg-sunken px-3 py-2 text-sm">
-      <p className="num"><span className="font-bold">Last time, {when}:</span> {last.sets.map((s) => pastText(s)).join(", ")}</p>
+      <p className="num"><span className="font-bold">Last time, {when}:</span> {last.sets.map((s, k) => pastText(s, false, labels[k])).join(", ")}</p>
       {(top || vol !== null) && (
         <p className="num text-muted">
           {[top && `Top set ${pastText(top, true)}`, vol !== null && `volume ${formatVolume(vol, unit)}`].filter(Boolean).join(", ")}
@@ -278,7 +296,6 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
 }) {
   const f = FIELDS[e.logging_type];
   const [menu, setMenu] = useState<string | null>(null);
-  const [rpeOpen, setRpeOpen] = useState<string | null>(null);
   const [problem, setProblem] = useState<{ id: string; text: string } | null>(null);
   const [platesFor, setPlatesFor] = useState<string | null>(null);
   const menuSet = e.sets.find((s) => s.id === menu);
@@ -290,6 +307,9 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
   const gear = copy?.gear ? gearFor(copy.gear, info ?? { bar_id: null, plate_set_id: null }) : null;
   const plateSet = e.sets.find((s) => s.id === platesFor);
   const cols = [f.weight, f.reps && "Reps", f.distance && "Distance", f.duration && "Time"].filter(Boolean) as string[];
+  const labels = setLabels(e.sets);
+  const menuLabel = menuSet ? labels[e.sets.indexOf(menuSet)] : null;
+  const top = useMemo(() => (f.weight ? heaviest(hist, e.exercise_id) : null), [f.weight, hist, e.exercise_id]);
 
   return (
     <div className={compact ? "pt-3 first:pt-0" : ""}>
@@ -300,14 +320,17 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
 
       <div aria-hidden className="mt-3 flex gap-1 px-1 text-xs font-bold uppercase text-muted">
         <span className="w-11 shrink-0 text-center">Set</span>
-        {cols.map((c) => <span key={c} className="min-w-0 flex-1 text-center">{c === f.weight ? `${c} (${u.weight_unit})` : c}</span>)}
-        {f.rpe && <span className="w-12 shrink-0 text-center">RPE</span>}
-        <span className="w-12 shrink-0 text-center">Done</span>
+        {cols.map((c) => c === f.weight ? (
+          <span key={c} className="contents">
+            <span className={`min-w-0 text-center ${WEIGHT_COL}`}>{c} ({u.weight_unit})</span>
+            {plateMath && <span className="w-11 shrink-0" />}
+          </span>
+        ) : <span key={c} className="min-w-0 flex-1 text-center">{c}</span>)}
+        <span className="w-11 shrink-0 text-center">Done</span>
       </div>
       <ol className="mt-1 space-y-1">
         {e.sets.map((s, k) => (
-          <SetRow key={s.id} e={e} s={s} n={k + 1} up={s.id === nextId}
-            rpeOpen={rpeOpen === s.id} onRpe={() => setRpeOpen(rpeOpen === s.id ? null : s.id)}
+          <SetRow key={s.id} e={e} s={s} l={labels[k]} up={s.id === nextId} heavy={tooHeavy(s, top) ? top : null}
             onMenu={() => setMenu(s.id)} problem={problem?.id === s.id ? problem.text : null}
             onPlates={plateMath ? () => setPlatesFor(s.id) : undefined}
             onDone={async () => {
@@ -329,9 +352,23 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
         onExclude={(id, out) => void excludePlate(id, out)}
         onUse={(total) => plateSet && void setSet(e.key, plateSet.id, { weight: total })} />
 
-      <Sheet open={menuSet !== undefined} title={menuSet ? `Set ${e.sets.indexOf(menuSet) + 1}` : ""} onClose={() => setMenu(null)}>
+      <Sheet open={menuSet !== undefined} title={menuLabel?.name ?? ""} onClose={() => setMenu(null)}>
         {menuSet && (
           <>
+            {f.rpe && (
+              <fieldset className="mb-4">
+                <legend className="mb-1 font-bold">RPE</legend>
+                <div className="flex flex-wrap gap-1">
+                  {RPE_VALUES.map((v) => (
+                    <button key={v} type="button" aria-pressed={menuSet.rpe === v} onClick={() => void setSet(e.key, menuSet.id, { rpe: menuSet.rpe === v ? null : v })}
+                      className={`num min-h-11 min-w-11 rounded-xl border px-2 ${menuSet.rpe === v ? "border-accent-strong bg-accent-strong font-bold text-white" : "border-line bg-sunken"}`}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-sm text-muted">Tap the chosen one again to clear it.</p>
+              </fieldset>
+            )}
             <fieldset className="mb-4">
               <legend className="mb-1 font-bold">Set type</legend>
               <div className="grid grid-cols-2 gap-2">
@@ -360,68 +397,67 @@ function ExerciseBlock({ e, hist, units: u, compact, nextId, rest }: {
   );
 }
 
-function NumField({ label, value, onChange, mode, placeholder, disabled }: {
-  label: string; value: string; onChange: (v: string) => void; mode: "decimal" | "numeric" | "text"; placeholder?: string; disabled?: boolean;
+/** The weight column: wide enough for 9999.99 at the normal size (tabular
+ *  digits are 0.63em, so about 4.5rem of text plus padding and border). */
+const WEIGHT_COL = "min-w-[5.375rem] flex-[1.4]";
+
+/** A set field. Typing anything its pattern refuses (a fifth digit before
+ *  the decimal point, a third decimal) does nothing. */
+function NumField({ label, value, onChange, mode, pattern, placeholder, className = "flex-1" }: {
+  label: string; value: string; onChange: (v: string) => void; mode: "decimal" | "numeric" | "text"; pattern: RegExp;
+  placeholder?: string; className?: string;
 }) {
   return (
-    <label className="min-w-0 flex-1">
+    <label className={`min-w-0 ${className}`}>
       <span className="sr-only">{label}</span>
-      <input inputMode={mode} value={value} placeholder={placeholder} disabled={disabled} onChange={(e) => onChange(e.target.value)}
-        className="num block min-h-12 w-full min-w-0 rounded-xl border border-line bg-ground px-2 text-center text-lg disabled:opacity-70" />
+      <input inputMode={mode} value={value} placeholder={placeholder}
+        onChange={(e) => { if (pattern.test(e.target.value.trim())) onChange(e.target.value.trim()); }}
+        className="num block min-h-12 w-full min-w-0 rounded-xl border border-line bg-ground px-1 text-center text-lg" />
     </label>
   );
 }
 
-function SetRow({ e, s, n, up, rpeOpen, onRpe, onMenu, onDone, onPlates, problem }: {
-  e: ActiveExercise; s: ActiveSet; n: number; up: boolean; rpeOpen: boolean;
-  onRpe: () => void; onMenu: () => void; onDone: () => void; onPlates?: () => void; problem: string | null;
+function SetRow({ e, s, l, up, heavy, onMenu, onDone, onPlates, problem }: {
+  e: ActiveExercise; s: ActiveSet; l: SetLabel; up: boolean; heavy: Heaviest | null;
+  onMenu: () => void; onDone: () => void; onPlates?: () => void; problem: string | null;
 }) {
   const f = FIELDS[e.logging_type];
   const field = (patch: Partial<ActiveSet>) => void setSet(e.key, s.id, patch, true);
-  const name = `${e.name} set ${n}`;
+  const name = `${e.name} ${l.name.toLowerCase()}`;
+  const notes = [s.hint && f.reps && `Target ${s.hint} reps`, f.rpe && s.rpe && `RPE ${s.rpe}`].filter(Boolean).join(", ");
   return (
-    <li id={`set-${s.id}`} aria-label={`Set ${n}${s.done ? ", done" : ""}`}
+    <li id={`set-${s.id}`} aria-label={`${l.name}${l.tag ? `, ${l.tag.toLowerCase()}` : ""}${s.done ? ", done" : ""}`}
       className={`rounded-xl border-2 p-1 ${up ? "border-accent-text" : "border-transparent"} ${s.done ? "bg-sunken" : ""}`}>
       <div className="flex items-center gap-1">
-        <button type="button" onClick={onMenu} className="num inline-flex min-h-12 w-11 shrink-0 items-center justify-center rounded-xl font-bold text-accent-text hover:bg-sunken">
-          <span aria-hidden>{SET_TYPE_SHORT[s.set_type] || n}</span>
-          <span className="sr-only">Set {n}, {SET_TYPE[s.set_type]}. Change type or remove</span>
+        <button type="button" onClick={onMenu} className="num inline-flex min-h-12 w-11 shrink-0 flex-col items-center justify-center rounded-xl font-bold text-accent-text hover:bg-sunken">
+          <span aria-hidden className="leading-none">{l.label}</span>
+          {l.tag && <span aria-hidden className="mt-0.5 text-[0.625rem] font-bold uppercase leading-none">{l.tag}</span>}
+          <span className="sr-only">{l.name}, {SET_TYPE[s.set_type]}. Change type, RPE, or remove</span>
         </button>
-        {f.weight && (onPlates ? (
-          <div className="flex min-w-0 flex-1 gap-1">
-            <NumField label={`${name} ${f.weight.toLowerCase()}, ${s.weight_unit}`} mode="decimal" value={s.weight} onChange={(v) => field({ weight: v })} />
-            <button type="button" onClick={onPlates}
-              className="inline-flex min-h-12 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-sunken text-accent-text">
-              <Disc size={20} aria-hidden /><span className="sr-only">Plates for {name}</span>
-            </button>
-          </div>
-        ) : (
-          <NumField label={`${name} ${f.weight.toLowerCase()}, ${s.weight_unit}`} mode="decimal" value={s.weight} onChange={(v) => field({ weight: v })} />
-        ))}
-        {f.reps && <NumField label={`${name} reps`} mode="numeric" value={s.reps} placeholder={s.hint ?? undefined} onChange={(v) => field({ reps: v })} />}
-        {f.distance && <NumField label={`${name} distance, ${s.distance_unit}`} mode="decimal" value={s.distance} onChange={(v) => field({ distance: v })} />}
-        {f.duration && <NumField label={`${name} time`} mode="text" placeholder="m:ss" value={s.duration} onChange={(v) => field({ duration: v })} />}
-        {f.rpe && (
-          <button type="button" aria-expanded={rpeOpen} onClick={onRpe}
-            className={`num inline-flex min-h-12 w-12 shrink-0 items-center justify-center rounded-xl text-sm ${s.rpe ? "font-bold" : "text-muted"} hover:bg-sunken`}>
-            {s.rpe ?? "RPE"}<span className="sr-only"> for {name}</span>
+        {f.weight && (
+          <NumField label={`${name} ${f.weight.toLowerCase()}, ${s.weight_unit}`} mode="decimal" pattern={INPUT.weight} className={WEIGHT_COL}
+            value={s.weight} onChange={(v) => field({ weight: v })} />
+        )}
+        {f.weight && onPlates && (
+          <button type="button" onClick={onPlates}
+            className="inline-flex min-h-12 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-sunken text-accent-text">
+            <Disc size={20} aria-hidden /><span className="sr-only">Plates for {name}</span>
           </button>
         )}
+        {f.reps && <NumField label={`${name} reps`} mode="numeric" pattern={INPUT.reps} value={s.reps} placeholder={s.hint ?? undefined} onChange={(v) => field({ reps: v })} />}
+        {f.distance && <NumField label={`${name} distance, ${s.distance_unit}`} mode="decimal" pattern={INPUT.distance} value={s.distance} onChange={(v) => field({ distance: v })} />}
+        {f.duration && <NumField label={`${name} time`} mode="text" pattern={INPUT.duration} placeholder="m:ss" value={s.duration} onChange={(v) => field({ duration: v })} />}
         <button type="button" aria-pressed={s.done} onClick={onDone}
-          className={`inline-flex min-h-12 w-12 shrink-0 items-center justify-center rounded-xl border ${s.done ? "border-accent-strong bg-accent-strong text-white" : "border-line bg-ground text-muted"}`}>
+          className={`inline-flex min-h-12 w-11 shrink-0 items-center justify-center rounded-xl border ${s.done ? "border-accent-strong bg-accent-strong text-white" : "border-line bg-ground text-muted"}`}>
           <Check size={22} aria-hidden /><span className="sr-only">{s.done ? `Mark ${name} not done` : `Complete ${name}`}</span>
         </button>
       </div>
-      {s.hint && f.reps && <p className="pl-12 text-xs text-muted">Target {s.hint} reps</p>}
-      {rpeOpen && (
-        <div role="group" aria-label={`RPE for ${name}`} className="mt-1 flex flex-wrap gap-1 pl-12">
-          {RPE_VALUES.map((v) => (
-            <button key={v} type="button" aria-pressed={s.rpe === v} onClick={() => { void setSet(e.key, s.id, { rpe: s.rpe === v ? null : v }); onRpe(); }}
-              className={`num min-h-11 min-w-11 rounded-xl border px-2 ${s.rpe === v ? "border-accent-strong bg-accent-strong font-bold text-white" : "border-line bg-sunken"}`}>
-              {v}
-            </button>
-          ))}
-        </div>
+      {notes && <p className="pl-12 text-xs text-muted">{notes}</p>}
+      {heavy && (
+        <p className="flex items-start gap-1 pl-12 text-sm font-bold text-over">
+          <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0" />
+          <span>Check this weight. Your heaviest is {heavy.value} {heavy.unit}.</span>
+        </p>
       )}
       {problem && <p role="alert" className="pl-12 text-sm font-bold text-over">{problem}</p>}
     </li>
@@ -496,6 +532,13 @@ function Overview({ w, hist, units: u, onJump }: { w: ActiveWorkout; hist: HistW
                     <span className="flex flex-wrap items-center gap-2 text-sm text-muted">
                       {done} of {plural(e.sets.length, "set")} done
                       {letters[i] && <Badge>Superset {letters[i]}</Badge>}
+                    </span>
+                    <span aria-hidden className="mt-1 flex flex-wrap gap-1">
+                      {setLabels(e.sets).map((l, k) => (
+                        <span key={e.sets[k].id} className={`num inline-flex min-w-7 items-center justify-center rounded-md border px-1 text-xs font-bold ${e.sets[k].done ? "border-accent-strong bg-accent-strong text-white" : "border-line text-muted"}`}>
+                          {l.label}{l.tag && <span className="ml-0.5 font-normal">{l.tag.toLowerCase()}</span>}
+                        </span>
+                      ))}
                     </span>
                   </button>
                   <button type="button" onClick={() => (done ? setRemoving(e) : void remove(e.key))}

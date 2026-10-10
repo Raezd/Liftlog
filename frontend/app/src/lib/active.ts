@@ -6,8 +6,8 @@
  */
 import { useSyncExternalStore } from "react";
 import { read, write } from "./idb";
-import { noteActive, syncNow } from "./offline";
-import type { ActiveWorkout, Queued, UploadBody } from "./session";
+import { getOffline, noteActive, reloadQueue, syncNow } from "./offline";
+import { reopen, type ActiveWorkout, type Queued, type UploadBody } from "./session";
 
 type State = { loaded: boolean; workout: ActiveWorkout | null; problem: string | null };
 
@@ -84,6 +84,29 @@ export async function finish(body: UploadBody): Promise<void> {
   publish({ workout: null });
   noteActive(false);
   void syncNow();
+}
+
+/**
+ * Moves a Needs attention workout back to in progress, in one write, so it
+ * can be fixed and finished again. Returns why not, if it can't.
+ */
+export async function reopenQueued(id: string): Promise<string | null> {
+  await loadActive();
+  await chain;
+  const q = (await read<Queued>("queue", id)) ?? null;
+  if (!q) return "That workout isn't on this phone anymore.";
+  const copy = getOffline().copy;
+  const w = reopen(q, latest, copy?.exercises ?? [], copy?.me ?? { weight_unit: "lb", distance_unit: "mi" });
+  if ("refused" in w) return w.refused;
+  await write(["active", "queue"], (s) => {
+    s.queue.delete(id);
+    s.active.put(w, "workout");
+  });
+  latest = w;
+  publish({ workout: w, problem: null });
+  noteActive(true);
+  await reloadQueue();
+  return null;
 }
 
 /** Throws the workout away. Nothing is sent anywhere. */

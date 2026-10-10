@@ -6,7 +6,7 @@
  * Runtime imports name their .ts files, so Node's test runner can load this
  * file; keep everything it imports free of runtime imports other than these.
  */
-import { duration } from "./format.ts";
+import { duration, setLabels } from "./format.ts";
 import { uuid7 } from "./ids.ts";
 import { prefill, type PastSet, type PastWorkout, type TargetSet } from "./prefill.ts";
 import { groupOf, units, type Linked } from "./reorder.ts";
@@ -37,6 +37,22 @@ export function parseDuration(text: string): number | null | undefined {
 }
 
 export const isNumber = (t: string) => /^\d+(\.\d+)?$/.test(t.trim());
+
+/**
+ * What each set field accepts while typing; anything else is refused as it's
+ * typed. Weight is 0 to 9999.99 in its unit with at most two decimals, reps
+ * 0 to 999, time up to 24 hours, distance up to 1,000 km (checked in
+ * meters by setProblem). The server checks the same limits.
+ */
+export const INPUT = {
+  weight: /^\d{0,4}(\.\d{0,2})?$/,
+  reps: /^\d{0,3}$/,
+  duration: /^[\d:]{0,8}$/,
+  distance: /^\d{0,7}(\.\d{0,3})?$/,
+};
+export const MAX_DURATION = 86_400;
+const MAX_DISTANCE_M = 1_000_000;
+const M_PER: Record<DistanceUnit | "m", number> = { m: 1, km: 1000, mi: 1609.344 };
 
 export const DEFAULT_REST = 90;
 export const REST_STEP = 15;
@@ -98,6 +114,8 @@ export type ActiveWorkout = {
   /** Plate ids left out of plate math for this workout only. Gone when it
    *  finishes or is discarded; the saved gear never changes. */
   excluded_plates?: string[];
+  /** Set on a workout reopened from Needs attention: finishing again keeps it. */
+  ended_at?: string | null;
 };
 
 export type UploadSet = {
@@ -285,8 +303,14 @@ export function upNext(unit: ActiveExercise[]): { key: string; set: number } | n
 export function setProblem(s: ActiveSet, f: Fields): string | null {
   if (f.weight && s.weight.trim() && !isNumber(s.weight)) return `${f.weight} should be a number.`;
   if (f.reps && s.reps.trim() && !/^\d+$/.test(s.reps.trim())) return "Reps should be a whole number.";
+  if (f.weight && s.weight.trim() && !INPUT.weight.test(s.weight.trim())) return `${f.weight} goes up to 9999.99, with at most two decimals.`;
+  if (f.reps && s.reps.trim() && !INPUT.reps.test(s.reps.trim())) return "Reps go up to 999.";
   if (f.duration && parseDuration(s.duration) === undefined) return "Write time like 1:30.";
+  if (f.duration && (parseDuration(s.duration) ?? 0) > MAX_DURATION) return "Time goes up to 24 hours.";
   if (f.distance && s.distance.trim() && !isNumber(s.distance)) return "Distance should be a number.";
+  if (f.distance && s.distance.trim() && (!INPUT.distance.test(s.distance.trim()) || Number(s.distance) * M_PER[s.distance_unit] > MAX_DISTANCE_M)) {
+    return "Distance goes up to 1,000 km, with at most three decimals.";
+  }
   return null;
 }
 
@@ -324,7 +348,7 @@ export function toUpload(w: ActiveWorkout, endedAt: string): UploadBody {
     for (let i = 0; i < u.length; i++) group.push(g);
   }
   return {
-    title: w.title.trim() || "Workout", notes: w.notes.trim(), started_at: w.started_at, ended_at: endedAt,
+    title: w.title.trim() || "Workout", notes: w.notes.trim(), started_at: w.started_at, ended_at: w.ended_at ?? endedAt,
     routine_version_id: w.routine_version_id, routine_version: w.routine_version_id ? w.version ?? null : null,
     exercises: w.exercises.flatMap((e, i) => {
       const done = e.sets.filter((s) => s.done);
@@ -364,4 +388,87 @@ export function canLink(items: ActiveExercise[], i: number): boolean {
   if (i >= items.length - 1 || items[i].linkNext) return false;
   const size = (j: number) => { const g = groupOf(items, j); return g ? g[1] - g[0] + 1 : 1; };
   return size(i) + size(i + 1) <= 3;
+}
+
+// ---------- heavy weight warning ----------
+
+/** A weight in exact units of 1e-10 kg (whole hundredths of the entered unit
+ *  times kg per unit, both whole numbers), so 1.5 times compares exactly. */
+function exactKg(value: string, unit: WeightUnit): number {
+  return Math.round(Number(value) * 100) * (unit === "lb" ? 45_359_237 : 100_000_000);
+}
+
+export type Heaviest = { exact: number; value: string; unit: WeightUnit };
+
+/** The heaviest weight ever logged for an exercise, on the copy plus queued
+ *  workouts (history()), compared in kg. Null with no history of a weight. */
+export function heaviest(hist: HistWorkout[], exerciseId: string): Heaviest | null {
+  let top: Heaviest | null = null;
+  for (const w of hist) {
+    for (const e of w.exercises) {
+      if (e.exercise_id !== exerciseId) continue;
+      for (const s of e.sets) {
+        if (s.weight_value === null || s.weight_unit === null || !isNumber(s.weight_value)) continue;
+        const exact = exactKg(s.weight_value, s.weight_unit);
+        if (!top || exact > top.exact) top = { exact, value: s.weight_value, unit: s.weight_unit };
+      }
+    }
+  }
+  return top;
+}
+
+/** "Check this weight": more than 1.5 times the heaviest. Never blocks. */
+export function tooHeavy(s: Pick<ActiveSet, "weight" | "weight_unit">, top: Heaviest | null): boolean {
+  if (!top || !isNumber(s.weight)) return false;
+  return 2 * exactKg(s.weight.trim(), s.weight_unit) > 3 * top.exact;
+}
+
+/** Every set in the workout with a weight that gets the warning, for the finish screen. */
+export function heavySets(w: ActiveWorkout, hist: HistWorkout[]): { key: string; set: ActiveSet; name: string; label: string; top: Heaviest }[] {
+  return w.exercises.flatMap((e) => {
+    if (!FIELDS[e.logging_type].weight) return [];
+    const top = heaviest(hist, e.exercise_id);
+    if (!top) return [];
+    const labels = setLabels(e.sets);
+    return e.sets.flatMap((s, k) => (tooHeavy(s, top) ? [{ key: e.key, set: s, name: e.name, label: labels[k].name, top }] : []));
+  });
+}
+
+// ---------- reopen ----------
+
+export const REOPEN_BLOCKED = "Finish or discard the workout in progress first.";
+
+/**
+ * A workout the server refused, back in progress so it can be fixed on the
+ * workout screen: the same id, started_at, and ended_at (finishing again
+ * keeps it), its done sets, no rest running, no plates left out. Refused
+ * while another workout is in progress.
+ */
+export function reopen(q: Queued, active: ActiveWorkout | null, exercises: ExerciseInfo[], units: Units): ActiveWorkout | { refused: string } {
+  if (active) return { refused: REOPEN_BLOCKED };
+  const info = new Map(exercises.map((x) => [x.id, x]));
+  const fromVersion = new Map((q.body.routine_version?.exercises ?? []).map((x) => [x.exercise_id, x]));
+  const exs = q.body.exercises.map((e, i, all): ActiveExercise => {
+    const known = info.get(e.exercise_id) ?? fromVersion.get(e.exercise_id);
+    const linkNext = e.superset_group !== null && all[i + 1]?.superset_group === e.superset_group;
+    const first = linkNext && all[i - 1]?.superset_group !== e.superset_group;
+    return {
+      key: e.id, exercise_id: e.exercise_id, name: known?.name ?? "Exercise",
+      logging_type: known?.logging_type ?? "weight_reps", equipment: known?.equipment ?? "other", notes: e.notes,
+      rest: e.rest_seconds ?? DEFAULT_REST, linkNext, supersetRest: first ? e.rest_seconds : null,
+      sets: e.sets.map((s): ActiveSet => ({
+        id: s.id, set_type: s.set_type,
+        weight: s.weight_value ?? "", weight_unit: s.weight_unit ?? units.weight_unit,
+        reps: s.reps?.toString() ?? "",
+        duration: s.duration_seconds != null ? duration(s.duration_seconds) : "",
+        distance: s.distance_value ?? "", distance_unit: s.distance_unit ?? units.distance_unit,
+        rpe: s.rpe, done: true, completed_at: s.completed_at, hint: null,
+      })),
+    };
+  });
+  return {
+    id: q.id, login: q.login, title: q.body.title, notes: q.body.notes, started_at: q.body.started_at, ended_at: q.body.ended_at,
+    routine_id: q.routine_id, routine_version_id: q.body.routine_version_id, version: q.body.routine_version ?? null,
+    exercises: exs, currentKey: exs[0]?.key ?? null, rest: null, nextAlertId: 1, excluded_plates: [],
+  };
 }

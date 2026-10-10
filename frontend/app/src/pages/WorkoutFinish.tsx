@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AlertTriangle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Button, Card, Loading, Page, TextField, btn } from "../components/ui";
 import { finish, update, useActive } from "../lib/active";
 import { duration, plural } from "../lib/format";
 import { useOffline } from "../lib/offline";
-import { finishCounts, summarize, toUpload, type Summary } from "../lib/session";
+import { finishCounts, heavySets, history, summarize, toUpload, type Summary } from "../lib/session";
 import type { LoggingType } from "../lib/types";
 import { formatVolume } from "../lib/volume";
 import { stopRest } from "../timer/useRest";
@@ -22,6 +23,8 @@ export function WorkoutFinish() {
   const [busy, setBusy] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hist = useMemo(() => history(off.copy?.workouts ?? [], off.queue), [off.copy, off.queue]);
+  const heavy = useMemo(() => (w ? heavySets(w, hist) : []), [w, hist]);
 
   if (!isNative()) return <NoWorkout web />;
   if (!loaded) return <Screen><Loading /></Screen>;
@@ -60,6 +63,23 @@ export function WorkoutFinish() {
           {c.droppedSets > 0 && <p className="mt-1">{plural(c.droppedSets, "set")} not done won't be saved.</p>}
           {c.droppedExercises > 0 && <p className="mt-1">{plural(c.droppedExercises, "exercise")} with no sets done won't be saved.</p>}
         </Card>
+        {heavy.length > 0 && (
+          <Card>
+            <p className="flex items-center gap-2 font-bold text-over"><AlertTriangle size={20} aria-hidden className="shrink-0" />Check {heavy.length === 1 ? "this weight" : "these weights"}</p>
+            <p className="mt-1 text-sm">More than 1.5 times your heaviest for the exercise. Tap one to fix it, or save if it's right.</p>
+            <ul className="mt-2 space-y-1">
+              {heavy.map((h) => (
+                <li key={h.set.id}>
+                  <button type="button" className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-line bg-sunken px-3 py-2 text-left"
+                    onClick={() => { void update((x) => ({ ...x, currentKey: h.key })); navigate("/workout", { state: { focusSet: h.set.id } }); }}>
+                    <span><span className="font-bold">{h.name}</span>, {h.label.toLowerCase()}{!h.set.done && <span className="text-muted"> (not done)</span>}</span>
+                    <span className="num shrink-0 font-bold">{h.set.weight} {h.set.weight_unit}<span className="sr-only">, heaviest is {h.top.value} {h.top.unit}</span></span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
         {error && <p role="alert" className="mb-3 font-bold text-over">{error}</p>}
         <Button variant="primary" className="w-full" disabled={busy || c.sets === 0} onClick={() => void save()}>
           {busy ? "Saving..." : "Save workout"}

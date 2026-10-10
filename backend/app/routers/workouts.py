@@ -25,9 +25,9 @@ from app.library import check_new_id, problem
 from app.models import (
     Routine, RoutineExercise, RoutineVersion, Set, User, UserExercise, Workout, WorkoutExercise,
 )
-from app.routers.routines import SetIn, check_rpe, check_text, group_runs
+from app.routers.routines import SetIn, check_text, group_runs
 from app.routers.routines import make_set as make_target
-from app.units import to_kg, to_m
+from app.units import M_PER, to_kg, to_m
 from app.users import CurrentUser, DbSession, not_found
 
 router = APIRouter(prefix="/api/workouts")
@@ -117,14 +117,15 @@ SetType = Literal["normal", "warmup", "drop", "failure"]
 
 
 class SetUp(BaseModel):
+    # Ranges are checked in check_sets(), which names the exercise and set.
     id: uuid.UUID
     set_type: SetType = "normal"
-    weight_value: Decimal | None = Field(None, ge=0, le=10000)
+    weight_value: Decimal | None = Field(None, allow_inf_nan=False)
     weight_unit: Literal["lb", "kg"] | None = None
-    reps: int | None = Field(None, ge=0, le=10000)
-    rpe: Decimal | None = None
-    duration_seconds: int | None = Field(None, ge=0, le=172800)
-    distance_value: Decimal | None = Field(None, ge=0, le=100000)
+    reps: int | None = None
+    rpe: Decimal | None = Field(None, allow_inf_nan=False)
+    duration_seconds: int | None = None
+    distance_value: Decimal | None = Field(None, allow_inf_nan=False)
     distance_unit: Literal["mi", "km", "m"] | None = None
     completed_at: AwareDatetime | None = None
 
@@ -187,16 +188,77 @@ def already_there(session: Session, user: User, w: Workout, digest: str, respons
     return full_workouts(session, user, [w.id])[0]
 
 
+MAX_WEIGHT = Decimal("9999.99")
+MAX_REPS = 999
+MAX_DURATION = 86_400
+MAX_DISTANCE_M = Decimal(1_000_000)
+CENT = Decimal("0.01")
+MILLI = Decimal("0.001")
+
+
+def set_names(sets: list[SetUp]) -> list[str]:
+    """Each set as the phone shows it: warm-ups apart ("warm-up 2"), the
+    rest numbered from 1 in order ("set 3")."""
+    out, warm, work = [], 0, 0
+    for s in sets:
+        if s.set_type == "warmup":
+            warm += 1
+            out.append(f"warm-up {warm}")
+        else:
+            work += 1
+            out.append(f"set {work}")
+    return out
+
+
+def _shown(v: Decimal) -> str:
+    return f" {format(v.normalize(), 'f')}" if v.adjusted() < 9 else ""
+
+
+def set_problem(s: SetUp) -> str | None:
+    """The first thing wrong with a set's values, in plain words, or None."""
+    w = s.weight_value
+    if (w is None) != (s.weight_unit is None):
+        return "the weight needs a unit"
+    if w is not None:
+        if w < 0:
+            return "the weight can't be negative"
+        if w > MAX_WEIGHT:
+            return f"the weight{_shown(w)} {s.weight_unit} is over the limit of 9999.99"
+        if w != w.quantize(CENT):
+            return f"the weight{_shown(w)} has more than two decimal places"
+    if s.reps is not None and not 0 <= s.reps <= MAX_REPS:
+        return "reps must be a whole number from 0 to 999"
+    if s.rpe is not None and (not 6 <= s.rpe <= 10 or (s.rpe * 2) % 1 != 0):
+        return "RPE goes from 6 to 10 in half steps"
+    if s.duration_seconds is not None and not 0 <= s.duration_seconds <= MAX_DURATION:
+        return "the time must be between 0 and 24 hours"
+    d = s.distance_value
+    if (d is None) != (s.distance_unit is None):
+        return "the distance needs a unit"
+    # Every unit is at least a meter, so a huge value is refused before converting.
+    if d is not None and (d < 0 or d > MAX_DISTANCE_M or d * M_PER[s.distance_unit] > MAX_DISTANCE_M):
+        return "the distance must be between 0 and 1,000 km"
+    if d is not None and d != d.quantize(MILLI):
+        return "the distance has more than three decimal places"
+    return None
+
+
+def check_sets(body: "WorkoutUp", names: dict[uuid.UUID, str]) -> None:
+    """Refuses the whole upload (422, nothing written) at the first bad set,
+    naming the exercise and the set as the phone numbers it."""
+    for e in body.exercises:
+        for s, label in zip(e.sets, set_names(e.sets)):
+            why = set_problem(s)
+            if why:
+                raise problem("bad_set", f"{names.get(e.exercise_id, 'An exercise')}, {label}: {why}.")
+
+
 def make_set(s: SetUp, position: int) -> Set:
-    if (s.weight_value is None) != (s.weight_unit is None):
-        raise problem("bad_weight", "A weight needs a unit.")
-    if (s.distance_value is None) != (s.distance_unit is None):
-        raise problem("bad_distance", "A distance needs a unit.")
     return Set(
         id=check_new_id(s.id), position=position, set_type=s.set_type,
         weight_value=s.weight_value, weight_unit=s.weight_unit,
         weight_kg=to_kg(s.weight_value, s.weight_unit) if s.weight_value is not None else None,
-        reps=s.reps, rpe=check_rpe(s.rpe), duration_seconds=s.duration_seconds,
+        reps=s.reps, rpe=s.rpe, duration_seconds=s.duration_seconds,
         distance_value=s.distance_value, distance_unit=s.distance_unit,
         distance_m=to_m(s.distance_value, s.distance_unit) if s.distance_value is not None else None,
         completed_at=s.completed_at,
@@ -261,6 +323,9 @@ def upload_workout(workout_id: uuid.UUID, body: WorkoutUp, user: CurrentUser, se
         UserExercise.user_id == user.id, UserExercise.id.in_({e.exercise_id for e in body.exercises}))))
     if any(e.exercise_id not in mine for e in body.exercises):
         raise not_found()
+    names = dict(session.execute(select(UserExercise.id, UserExercise.name).where(
+        UserExercise.id.in_(mine))).all())
+    check_sets(body, names)
     ex_ids = [e.id for e in body.exercises]
     set_ids = [s.id for e in body.exercises for s in e.sets]
     if len(set(ex_ids)) != len(ex_ids) or len(set(set_ids)) != len(set_ids):
@@ -277,8 +342,6 @@ def upload_workout(workout_id: uuid.UUID, body: WorkoutUp, user: CurrentUser, se
         if v is None and not recreate_version(session, user, version_id, body.routine_version):
             version_id = None
 
-    names = dict(session.execute(select(UserExercise.id, UserExercise.name).where(
-        UserExercise.id.in_(mine))).all())
     groups = group_runs([e.superset_group for e in body.exercises], strict=False)
     w = Workout(
         id=workout_id, user_id=user.id, title=title, started_at=body.started_at, ended_at=body.ended_at,

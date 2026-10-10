@@ -353,7 +353,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 
 ## 11. Spec 5b: plate math, gear, export
 
-**Status:** built, tested, and committed. **Not deployed:** Trav runs `scripts/deploy.sh` (dump first, then `0008` runs), then `scripts/android-build.sh` and `scripts/android-publish.sh` from the same commit, and installs the APK on both phones. Rules are in `CLAUDE.md` (Plate math and gear, Export).
+**Status:** deployed with its fixes as `2e2bea2` (`predeploy/liftlog-20261010-035039-before-2e2bea2.dump`; `0008` is live) and Android `25-2e2bea2` published. Rules are in `CLAUDE.md` (Plate math and gear, Export).
 
 - **Migration `0008`:** `bars`, `plate_sets`, `plates`; `users.default_bar_id`, `default_plate_set_id`, `gear_seeded`; `user_exercises.bar_id`, `plate_set_id`, `plate_math` (turned on for existing barbell exercises). Downgrades and upgrades cleanly (checked once with gear in it).
 - **Gear:** presets copied in on first use, in the user's unit. Settings, Bars and plates (`/settings/gear`). Library editor: Show plates, bar, plates. Gear is in the offline copy.
@@ -376,7 +376,38 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Wife sees her own preset gear and exports only her data | isolation tested; pending on her phone |
 | Tests pass; dump before migration; memory under limits; web and APK same commit | tests pass; deploy pending |
 
-## 12. Known gaps
+## 12. Fixes from real use: set numbers, card flow, weight limits, Reopen, export button
+
+**Status:** built and tested; deploy and publish below. No migration. Rules are in `CLAUDE.md` (Offline model and sync: set field limits, set numbering, heavy weight warning, card flow, Needs attention, Reopen; Export).
+
+- **Set numbering:** warm-ups show W, the rest count from 1 skipping warm-ups, drop and failure sets carry a small tag. On the workout card, the Overview (a row of set labels per exercise, filled when done), and the last-session strip ("W: 95 x 10, 1: 185 x 5, 3 drop: 135 x 8"). Display only.
+- **Card flow:** the rest bar names the next card ("Up next: ..."), or "Last exercise". On the last card Next exercise becomes Finish.
+- **Weight field and limits:** the weight field is at least 5.375rem wide (9999.99 at 18 px is 69 px of text; checked in headless Chromium at 360 px wide with the real font and CSS, no page overflow, not kept). Typing past the limits does nothing; `setProblem` checks them again before a set is completed. To make room, RPE moved from its own column into the set's sheet (tap the set label) and shows under the row as "RPE 8".
+- **Heavy weight warning:** inline under the set, and listed on the finish screen (tap to jump). It compares against everything on the phone, so a reopened workout doesn't count against itself (it's out of the queue while open).
+- **Server:** `PUT /api/workouts/{id}` checks every set field and answers 422 `bad_set` with the reason. The old Pydantic bounds (weight up to 10,000, reps 10,000, duration 172,800, distance 100,000) are gone from the model, so every range answer is the plain one; the hash is unchanged (types are the same). One-off check, not kept: NaN, Infinity, `1e1000000`, `1e-1000000`, 10^30 reps, absurd RPE and distances, a missing unit, and non-integer reps all answer 422 and write nothing.
+- **Needs attention:** shows the server's reason (it already did for `{code, message}` errors; the generic text came from Pydantic's list errors, which these fields no longer produce). **Reopen** puts it back in progress (rules in `CLAUDE.md`).
+- **Export in the app:** Open in browser, a plain link to the page on the server's host. Capacitor sends links to other hosts to the phone's browser (`Bridge.launchIntent`, ACTION_VIEW), so no plugin was added.
+- **Tests:** 68 backend (new: six bad set values refused with their reasons, nothing written, the limits themselves accepted), 44 frontend (new: the server's reason kept for Needs attention while later workouts upload; Reopen keeps id and times, finishing again keeps `ended_at`, refused while another workout is in progress, uploads once; the heavy weight warning above 1.5 times only, exact at the boundary in mixed units, counting queued workouts, quiet with no history).
+
+### Choices made while building (not in the spec)
+
+- Server reasons name warm-ups as "warm-up 2" (the card shows W), so the set can be found.
+- Distance as entered allows at most three decimals, and time up to 24:00:00 can be typed; both keep bad values from reaching Postgres.
+- Flagged sets on the finish screen include sets not done yet, marked "(not done)".
+- An exercise missing from the copy on Reopen falls back to the started-from version's name and type, else "Exercise", weight and reps.
+- A workout refused with 409 `workout_conflict` can be reopened too, but the server still holds different content under that id, so it'll be refused again.
+
+| Check | Result |
+|---|---|
+| Routine with two warm-ups shows W, W, then 1 | pending on phone (Trav) |
+| After the last set of an exercise, up next names the next exercise; a superset's names its exercises | pending on phone |
+| Last card's button reads Finish and opens the confirm screen | pending on phone |
+| Weight field shows 1102.5 fully; a fifth digit or third decimal does nothing | fits at 360 px in headless Chromium; pending on phone |
+| 2252.5 lb on an exercise whose heaviest is 225 lb warns, and the finish screen lists it | rule tested; pending on phone |
+| Export button opens the page in the browser, and an export downloads there | pending on phone |
+| Tests pass; dump before deploy; memory under limits; web and APK same commit | 68 backend, 44 frontend, build passes; deploy below |
+
+## 13. Known gaps
 
 - Routine editing needs a connection. Offline editing comes after v1 (the conflict check and client ids are ready for it).
 - History and the workout view are online only. A workout waiting to upload shows in the unsynced count, not in History, until it uploads.

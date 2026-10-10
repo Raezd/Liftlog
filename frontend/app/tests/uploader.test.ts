@@ -71,3 +71,14 @@ test("only the signed-in login's workouts upload", async () => {
   await uploadQueue([q("hers", 1, "partner@example.com"), q("mine", 2)], ME, s.deps);
   assert.deepEqual(s.log, ["put mine", "uploaded mine"]);
 });
+
+test("a refused upload keeps the server's reason for Needs attention, and later ones still upload", async () => {
+  const reason = "Bench Press, set 1: the weight 225265 lb is over the limit of 9999.99.";
+  const log: string[] = [];
+  await uploadQueue([q("a", 1), q("b", 2)], ME, {
+    put: async (x: Queued) => { if (x.id === "a") throw new HttpError(422, reason); return x.id; },
+    uploaded: async (x: Queued) => { log.push(`uploaded ${x.id}`); },
+    refused: async (x: Queued, why: string) => { log.push(`refused ${x.id}: ${why}`); },
+  });
+  assert.deepEqual(log, [`refused a: ${reason}`, "uploaded b"]);
+});
