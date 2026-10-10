@@ -1,14 +1,17 @@
 /**
  * The workout in progress: its shape on the device, and the pure steps that
  * start it, add to it, time its rests, and turn it into an upload. Storage
- * is lib/active.ts; the screen is pages/Workout.tsx.
+ * is lib/active.ts; the screen is pages/Workout.tsx. Tests: tests/session.test.ts.
+ *
+ * Runtime imports name their .ts files, so Node's test runner can load this
+ * file; keep everything it imports free of runtime imports other than these.
  */
-import { duration } from "./format";
-import { uuid7 } from "./ids";
-import { prefill, type PastSet, type PastWorkout, type TargetSet } from "./prefill";
-import { groupOf, units, type Linked } from "./reorder";
+import { duration } from "./format.ts";
+import { uuid7 } from "./ids.ts";
+import { prefill, type PastSet, type PastWorkout, type TargetSet } from "./prefill.ts";
+import { groupOf, units, type Linked } from "./reorder.ts";
 import type { DistanceUnit, Equipment, LoggingType, Me, RoutineVersion, SetType, WeightUnit, WorkoutDetail } from "./types";
-import { volume } from "./volume";
+import { volume } from "./volume.ts";
 
 /** Which fields a set has, by logging type. */
 export type Fields = { reps: boolean; weight: string | null; duration: boolean; distance: boolean; rpe: boolean };

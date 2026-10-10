@@ -18,6 +18,7 @@ import { ApiError, api, get } from "./api";
 import { read, readAll, write } from "./idb";
 import { loginCheck, unsyncedFor } from "./offlineRules";
 import type { ActiveWorkout, Queued } from "./session";
+import { OFFLINE, uploadQueue } from "./uploader";
 import type { Me, OfflineCopy, RoutineDetail, RoutineList, WorkoutDetail } from "./types";
 
 type CacheRecord = { login: string; fetched_at: string; data: OfflineCopy };
@@ -159,29 +160,18 @@ export function syncNow(): Promise<void> {
     try {
       me = await get<Me>("/api/me");
     } catch (e) {
-      set({ problem: unreachable(e) ? "Can't reach the server right now. Your workouts are saved on this phone." : (e as Error).message });
+      set({ problem: unreachable(e) ? OFFLINE : (e as Error).message });
       return;
     }
-    let problem: string | null = null;
-    for (const q of queue) {
-      if (q.login !== me.login) continue;
-      try {
-        const w = await api<WorkoutDetail>(`/api/workouts/${q.id}`, { method: "PUT", json: q.body, timeoutMs: 30_000 });
+    const problem = await uploadQueue(queue, me.login, {
+      put: (q) => api<WorkoutDetail>(`/api/workouts/${q.id}`, { method: "PUT", json: q.body, timeoutMs: 30_000 }),
+      uploaded: async (q, w) => {
         await write(["queue"], (s) => s.queue.delete(q.id));
         await remember(w).catch(() => {});
-      } catch (e) {
-        if (unreachable(e)) {
-          problem = "Can't reach the server right now. Your workouts are saved on this phone.";
-          break;
-        }
-        // The server said no. Keep it queued, and say why.
-        const why = e instanceof ApiError && e.status === 409
-          ? "The server already has a different workout saved under this one's id, so it wasn't replaced."
-          : (e as Error).message;
-        await write(["queue"], (s) => s.queue.put({ ...q, error: why } satisfies Queued));
-        problem = why;
-      }
-    }
+      },
+      // The server said no. Keep it on the phone, and say why.
+      refused: (q, why) => write(["queue"], (s) => s.queue.put({ ...q, error: why } satisfies Queued)),
+    });
     set({ queue: sortQueue(await readAll<Queued>("queue")), problem });
   })().finally(() => {
     syncing = null;

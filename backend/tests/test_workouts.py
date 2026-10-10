@@ -88,6 +88,23 @@ def test_upload_is_idempotent_and_never_overwrites(client, db):
     assert client.get("/api/workouts", headers=PARTNER).json()["workouts"] == []
 
 
+def test_a_retry_with_trailing_zero_lb_and_microsecond_times_is_still_the_same(client, db):
+    """The server stores 137.5 and microseconds as it normalizes them; a lost
+    response's retry still matches, because the comparison is upload to upload."""
+    ex = bench(client)
+    body = payload(ex["id"], started="2026-10-09T17:00:00.123456Z")
+    body["ended_at"] = "2026-10-09T18:00:00.987654+00:00"
+    body["exercises"][0]["sets"][1]["weight_value"] = "137.50"
+    body["exercises"][0]["sets"][1]["completed_at"] = "2026-10-09T17:20:31.000789Z"
+    wid, first = upload(client, body)
+    assert first.status_code == 201
+    stored = first.json()["exercises"][0]["sets"][1]
+    assert (stored["weight_value"], stored["weight_kg"]) == ("137.5", "62.369")
+    for _ in range(3):
+        assert upload(client, body, id=wid)[1].status_code == 200
+    assert counts() == (1, 1, 2)
+
+
 @pytest.mark.parametrize("started, expected", [
     ("2026-10-10T10:30:00+00:00", "2026-10-09"),   # 3:30 AM in Los Angeles: the day before
     ("2026-10-10T11:00:00+00:00", "2026-10-10"),   # 4:00 AM
