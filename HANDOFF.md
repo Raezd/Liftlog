@@ -7,7 +7,7 @@ Current state of the project, how to run it, and what comes next. Rules for work
 - **App URL:** `https://liftlog.<tailnet>.ts.net`, via the Tailscale sidecar (hostname `liftlog`, `tag:liftlog`, userspace networking, Serve on 443, Funnel off).
 - **Users:** Trav and his wife, both in `ALLOWED_LOGINS`. She reaches the node through a Tailscale device share.
 - **Code:** `~/liftlog`, branch `main`, private GitHub repo `Raezd/Liftlog` via the deploy key `~/.ssh/github_liftlog` (SSH alias `github-liftlog`, write access).
-- **Deployed:** `34dfde2` on October 9, 2026, at `https://liftlog.tail9d27a0.ts.net`. Idle memory at deploy: backend 62 MiB, db 15 MiB, tailscale 30 MiB, web 15 MiB, about 123 MiB total. Kuma push monitor `Liftlog` and the Homepage tile (Health group) are set up.
+- **Address:** `https://liftlog.tail9d27a0.ts.net`. Kuma push monitor `Liftlog` and the Homepage tile (Health group) are set up. What's deployed is never written here; check it live (section 3).
 - **Spec 1 accepted on October 9, 2026:**
   - The hello page shows each person's own login on Trav's phone, his wife's phone, and desktop.
   - The auth tests pass, no container publishes a port, and Funnel is off.
@@ -53,6 +53,17 @@ scripts/deploy.sh
 ```
 
 It refuses a dirty tree or an unmounted `/mnt/storage`, builds, takes a pg_dump (checked with `pg_restore --list`) to `/mnt/storage/backups/liftlog/predeploy/` (newest 10 kept), then starts the new containers. Migrations run when the backend starts, so the dump always comes first. It ends with `docker compose ps`, the Alembic revision, and `docker stats`.
+
+**What's deployed: check it live, every time.** This file never records deploy status, because it goes stale. Run these three:
+
+```bash
+cd ~/liftlog
+git fetch -q origin && git rev-parse --short origin/main      # the commit on origin/main
+docker compose exec -T backend alembic current | tail -1      # the migration the live database is on
+cat data/apk/version.json                                     # the Android version /download offers (<code>-<commit>)
+```
+
+The web build's commit shows in Settings, under the version. The web app and the APK match when Settings and `version.json` name the same commit.
 
 **First-time setup (done once):**
 
@@ -118,7 +129,7 @@ restic restore latest --tag liftlog --target / --include /home/YOUR_USER/liftlog
 
 ## 5. Spec 2: Android app and rest timer prototype
 
-**Status:** accepted October 9, 2026. Built, deployed, and published as `6-52e57ce`; Trav reported every phone acceptance test passing on both phones. **Path A chosen; default alert follows the ringer.**
+**Status:** accepted October 9, 2026. Trav reported every phone acceptance test passing on both phones. **Path A chosen; default alert follows the ringer.**
 
 ### What exists
 
@@ -188,7 +199,7 @@ The remaining order: 3 data model, exercise library, and Hevy import (done, sect
 
 ## 6. Spec 3: data model, exercise library, Hevy import
 
-**Status:** built, tested, and deployed as `688e3de` on October 9, 2026. Android app `10-688e3de` published to /download. Waiting on Trav's import and phone checks (table below).
+**Status:** built and tested. Waiting on Trav's import and phone checks (table below).
 
 ### What exists
 
@@ -197,8 +208,7 @@ The remaining order: 3 data model, exercise library, and Hevy import (done, sect
 - **Routes:** `GET/PATCH /api/me` (login and settings), `GET /api/muscles`, `GET /api/catalog?q=`, `GET /api/catalog/{id}`, `GET/POST /api/exercises`, `GET/PATCH /api/exercises/{id}`, `GET /api/workouts?before=`, `GET /api/workouts/{id}`, `POST /api/imports/hevy/preview`, `POST /api/imports/hevy`, `GET /api/imports`, `GET /api/imports/{id}`.
 - **Pages** (web and Android, bottom nav): History (newest first, imported label, tap for exercises and sets), Library (search, Needs review and Archived filters, add from catalog or custom, edit name, equipment, logging type, muscles, archive, muscle change history), Import (upload, counts, per-title review, delt confirmation, result), Settings (display name, timezone, units, play through silent mode, login and version). The hello page is gone; the timer test screen is under Settings in the app.
 - **Hevy import** (flow in `CLAUDE.md`): columns verified against Trav's real export. Strong matches (score 1.1 or more) start out picked on the review screen; everything else needs a choice. Delts chosen on the review screen are applied; the exercise keeps Needs review unless "These delts are right" is ticked.
-- **Deploy** now goes through `scripts/deploy.sh` (dump first). The first one wrote `predeploy/liftlog-20261009-211022-before-688e3de.dump` before `0002` to `0004` ran.
-- **Memory after deploy:** backend 64 MiB, db 21 MiB, tailscale 30 MiB, web 13 MiB.
+- **Deploy** now goes through `scripts/deploy.sh` (dump first).
 
 ### Dry run on Trav's export
 
@@ -216,12 +226,12 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 | Every title resolved; second import asks nothing | test passes; dry run passes |
 | Shoulder exercises arrive with Needs review; confirming clears it | test passes; pending on the page (Trav) |
 | Tests pass | 39 pass |
-| Library, history, settings on desktop and both phones; wife sees none of Trav's data | isolation test passes; phones pending (install `10-688e3de`) |
-| pg_dump before the migration; stack under memory limits | done (see above) |
+| Library, history, settings on desktop and both phones; wife sees none of Trav's data | isolation test passes; phones pending |
+| pg_dump before the migration; stack under memory limits | done |
 
 ## 7. Spec 4: routines
 
-**Status:** built, tested, and deployed as `ef095a4` on October 9, 2026. Waiting on Trav's checks on the page and phones (table below). Android app `14-c478968` published to /download.
+**Status:** built and tested. Waiting on Trav's checks on the page and phones (table below).
 
 ### What exists
 
@@ -234,7 +244,6 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
   - **Save as routine:** a button at the bottom of a workout in History. Name defaults to the workout title; pick a folder, no folder, or a new one.
 - **Prefill rule:** `frontend/app/src/lib/prefill.ts`, exported for Spec 5, not used by any screen yet. Rule in `CLAUDE.md`.
 - **Tests:** 44 backend (5 new in `test_routines.py`: new version leaves the old one unchanged, stale parent is a conflict, the database refuses updates to a version, superset rules, save as routine copies sets and skips RPE, delete only when unused, user isolation for folders, routines, and versions) and 6 frontend (`frontend/app/tests/prefill.test.ts`, Node's own test runner, no new packages). `0005` downgrades and upgrades cleanly.
-- **Deploy:** `scripts/deploy.sh` wrote `predeploy/liftlog-20261009-225136-before-ef095a4.dump` before `0005` ran. Memory after deploy: backend 65 MiB, db 23 MiB, tailscale 30 MiB, web 12 MiB, all well under their limits.
 
 ### Choices made while building (not in the spec)
 
@@ -251,16 +260,16 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 |---|---|
 | Trav saves his latest Day 1 to Day 4 workouts as routines in one folder, then edits one to use rep ranges and a different target on one set | pending (Trav) |
 | Editing makes a new version; the old one is still readable | test passes; on the page under Versions, pending (Trav) |
-| Editor works on desktop and both phones, reordering by drag and by buttons | pending (Trav). Not checked in a browser this session (no browser tools). Install `14-c478968` on both phones |
+| Editor works on desktop and both phones, reordering by drag and by buttons | pending (Trav). Not checked in a browser this session (no browser tools). |
 | Tests pass | 44 backend, 6 frontend, build passes |
 | Wife sees none of Trav's folders or routines and can make her own | isolation test passes; on her phone, pending |
-| Dump before migrations; memory under limits | done (see above) |
+| Dump before migrations; memory under limits | done |
 
 ## 8. Spec 4 fixes
 
-**Status:** deployed as `266ac73` on October 9, 2026, and Android `16-266ac73` (same commit) published to /download. Waiting on Trav's checks (table below).
+**Status:** built and tested. Waiting on Trav's checks (table below).
 
-- **Deploy:** `predeploy/liftlog-20261009-232010-before-266ac73.dump` was written before `0006` ran. "Lower A" went from 7 versions to 1. Memory after: backend 65 MiB, db 23 MiB, tailscale 30 MiB, web 13 MiB.
+- **Migration:** "Lower A" went from 7 versions to 1 when `0006` ran.
 
 - **Superset moves** (`src/lib/reorder.ts`, rules in `CLAUDE.md`): moving an exercise within its superset keeps it there; past the first or last exercise takes it out; a lone exercise skips past a whole superset instead of landing inside it; a superset moves as one unit from its header. Works by drag and by buttons in reorder mode (`components/ExerciseOrder.tsx`, with a line showing where it will land and "In superset A" or "Not in a superset" on the dragged row), and by the buttons on each card (the first card of a superset has the group's buttons). Every move is announced.
 - **Save as routine** still saves immediately, then opens the new routine's view page (`/routines/{id}`, read-only, Edit button) with "Saved as a routine in {folder}." The editor moved to `/routines/{id}/edit`. Tapping a routine on the Routines page now opens the view page too; Edit is on it and in the routine's options.
@@ -274,23 +283,12 @@ Notes from the file: 31 exercise titles, weights in lb, distances in miles, no R
 | One focus ring on each input, desktop and both phones | pending (Trav) |
 | Superset swap, move out past an edge, move whole superset, by drag and buttons, desktop and both phones | rules unit-tested; pending on devices (Trav) |
 | Lower A shows one version after the migration; more edits still leave one | 1 after migration (checked in the database); further edits covered by a test, pending on the page |
-| Web and APK report the same commit; both phones on the new APK | both `266ac73`; phones pending |
+| Web and APK report the same commit; both phones on the new APK | matched when checked; phones pending |
 | Tests pass; dump before migration; memory under limits | 46 backend, 11 frontend; done |
 
 ## 9. Spec 5a: live workouts offline, sync, immutable history
 
-**Status:** deployed with the section 10 follow-ups as `34e78f8` (`predeploy/liftlog-20261010-013020-before-34e78f8.dump`; `0007` is live) and Android `22-34e78f8` published to /download. Phone checks below are still Trav's.
-
-### Deploy and publish (Trav)
-
-```bash
-cd ~/liftlog
-scripts/deploy.sh             # dump first, then 0007 runs on backend start
-scripts/android-build.sh      # from the same commit, so web and APK match
-scripts/android-publish.sh
-```
-
-Then install the new APK on both phones from /download. After the deploy, check that the dump file name in `predeploy/` says `before-<hash>` and that `alembic current` prints `0007`.
+**Status:** built and tested with the section 10 follow-ups. Phone checks below are still Trav's.
 
 ### What exists
 
@@ -333,11 +331,11 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Wife's phone shows only her data | upload and offline copy isolation tested; pending on her phone |
 | Timer test screen is gone | done in code; pending in the new APK |
 | A hand-run UPDATE on a finished set in psql is rejected | tested; pending on live (`docker compose exec db psql -U liftlog -c "UPDATE sets SET reps = reps"` should fail with "finished workouts are immutable") |
-| Tests pass; dump before migration; memory under limits | 56 backend, 18 frontend, build passes; deployed as `34e78f8` |
+| Tests pass; dump before migration; memory under limits | 56 backend, 18 frontend, build passes |
 
 ## 10. Spec 5a follow-ups: version recreation, Needs attention, sync tests
 
-**Status:** deployed as `34e78f8` with section 9, and Android `22-34e78f8` published. No migration in this change.
+**Status:** built and tested with section 9. No migration in this change.
 
 - **Version recreation** (rule in `CLAUDE.md`, Offline model and sync): the phone keeps the started-from version's content with the workout and sends it as `routine_version`. If the server pruned that version meanwhile, it recreates it under its original id as an older, non-current version with no parent, and links the workout. Someone else's routine or version is 404 and recreates nothing; a deleted routine means no link.
 - **Needs attention:** a workout refused with a 4xx shows in the waiting bar with the reason and Copy as JSON, Retry, and Remove from phone (confirmed). It's never retried or removed automatically and never blocks the queue. The summary screen says so too.
@@ -349,11 +347,11 @@ Nothing below has been run on a phone or in a browser this session (no device or
 |---|---|
 | Workout from a routine in progress in airplane mode, routine edited and saved on desktop, workout finished and uploaded: linked to its routine and its version, which Versions lists | recreation tested; pending on phone (Trav) |
 | Start opens within about 2 seconds on weak signal | pending (Trav) |
-| Tests pass; dump before migration; memory under limits; web and APK same commit | 60 backend, 24 frontend, build passes; web and APK both `34e78f8` |
+| Tests pass; dump before migration; memory under limits; web and APK same commit | 60 backend, 24 frontend, build passes; matched when checked |
 
 ## 11. Spec 5b: plate math, gear, export
 
-**Status:** deployed with its fixes as `2e2bea2` (`predeploy/liftlog-20261010-035039-before-2e2bea2.dump`; `0008` is live) and Android `25-2e2bea2` published. Rules are in `CLAUDE.md` (Plate math and gear, Export).
+**Status:** built and tested with its fixes. Rules are in `CLAUDE.md` (Plate math and gear, Export).
 
 - **Migration `0008`:** `bars`, `plate_sets`, `plates`; `users.default_bar_id`, `default_plate_set_id`, `gear_seeded`; `user_exercises.bar_id`, `plate_set_id`, `plate_math` (turned on for existing barbell exercises). Downgrades and upgrades cleanly (checked once with gear in it).
 - **Gear:** presets copied in on first use, in the user's unit. Settings, Bars and plates (`/settings/gear`). Library editor: Show plates, bar, plates. Gear is in the offline copy.
@@ -378,7 +376,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 
 ## 12. Fixes from real use: set numbers, card flow, weight limits, Reopen, export button
 
-**Status:** deployed as `de1edd8` on October 10, 2026 (`predeploy/liftlog-20261010-200213-before-de1edd8.dump`; still `0008`), and Android `26-de1edd8` published to /download. Memory after: backend 66 MiB, db 23 MiB, tailscale 48 MiB, web 12 MiB. Install the new APK on both phones for the checks below. No migration. Rules are in `CLAUDE.md` (Offline model and sync: set field limits, set numbering, heavy weight warning, card flow, Needs attention, Reopen; Export).
+**Status:** built and tested. No migration. Rules are in `CLAUDE.md` (Offline model and sync: set field limits, set numbering, heavy weight warning, card flow, Needs attention, Reopen; Export).
 
 - **Set numbering:** warm-ups show W, the rest count from 1 skipping warm-ups, drop and failure sets carry a small tag. On the workout card, the Overview (a row of set labels per exercise, filled when done), and the last-session strip ("W: 95 x 10, 1: 185 x 5, 3 drop: 135 x 8"). Display only.
 - **Card flow:** the rest bar names the next card ("Up next: ..."), or "Last exercise". On the last card Next exercise becomes Finish.
@@ -405,7 +403,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Weight field shows 1102.5 fully; a fifth digit or third decimal does nothing | fits at 360 px in headless Chromium; pending on phone |
 | 2252.5 lb on an exercise whose heaviest is 225 lb warns, and the finish screen lists it | rule tested; pending on phone |
 | Export button opens the page in the browser, and an export downloads there | pending on phone |
-| Tests pass; dump before deploy; memory under limits; web and APK same commit | 68 backend, 44 frontend, build passes; dump written first; all under limits; both `de1edd8` |
+| Tests pass; dump before deploy; memory under limits; web and APK same commit | 68 backend, 44 frontend, build passes; dump written first; all under limits; matched when checked |
 
 ## 13. Known gaps
 
