@@ -121,6 +121,10 @@ def _no_exercises(b):
     b["exercises"] = []
 
 
+def _no_sets(b):
+    b["exercises"][0]["sets"] = []
+
+
 def _zero_duration(b):
     b["duration_minutes"] = 0
 
@@ -134,6 +138,7 @@ def _future_end(b):
 @pytest.mark.parametrize("change, reason", [
     (_bad_weight, "Barbell Bench Press - Medium Grip, set 1: the weight 10000 lb is over the limit of 9999.99."),
     (_no_exercises, "A workout needs at least one exercise. To remove it all, delete the workout."),
+    (_no_sets, "Barbell Bench Press - Medium Grip has no sets. Add a set or remove the exercise."),
     (_zero_duration, "The workout needs to last at least a minute."),
     (_future_end, "The workout can't end in the future."),
 ])
@@ -200,11 +205,19 @@ def test_a_delete_sets_deleted_at_with_its_log_row_and_hides_it_everywhere(clien
     assert counts() == before and len(changes()) == 1
 
 
+def upload_hash(wid):
+    with get_sessionmaker()() as s:
+        return s.execute(text("SELECT upload_hash FROM workouts WHERE id = :w"), {"w": wid}).scalar_one()
+
+
 def test_retrying_the_first_upload_after_an_edit_is_still_a_no_op(client, db):
     _, body, wid, w = uploaded(client)
+    first_hash = upload_hash(wid)
     e = edit_body(w)
     e["exercises"][0]["sets"].pop(0)
     edited = edit(client, wid, e).json()
+    # The match is against upload_hash, the first upload's, which edits never change.
+    assert upload_hash(wid) == first_hash
     r = upload(client, body, id=wid)[1]
     assert r.status_code == 200 and r.json() == edited
     assert len(changes()) == 1
@@ -227,19 +240,25 @@ def test_a_hevy_reimport_skips_a_deleted_imported_workout(client, db):
 
 
 def test_another_users_workout_is_404_to_edit_and_delete(client, db):
+    # Both users have workouts before anyone tries anything.
     _, _, wid, w = uploaded(client)
-    body = edit_body(w)
-    body["title"] = "Hers now"
-    assert edit(client, wid, body, PARTNER).status_code == 404
-    assert client.delete(f"/api/workouts/{wid}", headers=PARTNER).status_code == 404
-    assert changes() == [] and client.get(f"/api/workouts/{wid}", headers=TRAV).json() == w
-    # She can edit and delete her own.
     her = bench(client, PARTNER)
-    hid, r = upload(client, payload(her["id"]), PARTNER)
-    mine = edit_body(r.json())
+    hid, r = upload(client, payload(her["id"], title="Hers"), PARTNER)
+    hw = r.json()
+    for (who, other_id, other_w) in ((PARTNER, wid, w), (TRAV, hid, hw)):
+        body = edit_body(other_w)
+        body["title"] = "Taken over"
+        assert edit(client, other_id, body, who).status_code == 404
+        assert client.delete(f"/api/workouts/{other_id}", headers=who).status_code == 404
+    assert changes() == []
+    assert client.get(f"/api/workouts/{wid}", headers=TRAV).json() == w
+    assert client.get(f"/api/workouts/{hid}", headers=PARTNER).json() == hw
+    # Each can edit and delete their own.
+    mine = edit_body(hw)
     mine["title"] = "Mine"
     assert edit(client, hid, mine, PARTNER).json()["title"] == "Mine"
     assert client.delete(f"/api/workouts/{hid}", headers=PARTNER).status_code == 204
+    assert client.get(f"/api/workouts/{wid}", headers=TRAV).json() == w
 
 
 def test_deleted_at_and_edit_revision_change_only_through_the_function(client, db):
@@ -253,3 +272,24 @@ def test_deleted_at_and_edit_revision_change_only_through_the_function(client, d
         sql("INSERT INTO workouts (id, user_id, title, started_at, workout_date, source, deleted_at) "
             "SELECT gen_random_uuid(), user_id, 'x', now(), current_date, 'liftlog', now() FROM workouts LIMIT 1")
     assert stored(wid)["deleted_at"] is None
+
+
+def test_a_deleted_workout_leaves_save_as_routine_and_the_versions_list_but_keeps_its_version(client, db):
+    ex = bench(client)
+    r = client.post("/api/routines", headers=TRAV, json={"name": "Day 1", "version": {"exercises": [{
+        "exercise_id": ex["id"], "sets": [{"reps_min": 5}]}]}}).json()
+    v1 = r["current_version"]["id"]
+    wid, up = upload(client, payload(ex["id"], version=v1))
+    _, kept = upload(client, payload(ex["id"], version=v1, started="2026-10-07T17:00:00Z", title="Kept"))
+    assert client.delete(f"/api/workouts/{wid}", headers=TRAV).status_code == 204
+
+    versions = client.get(f"/api/routines/{r['id']}/versions", headers=TRAV).json()
+    assert [x["title"] for x in versions[0]["workouts"]] == ["Kept"]
+    assert client.post("/api/routines/from-workout", headers=TRAV, json={
+        "id": str(uuid7()), "workout_id": wid, "name": "From a deleted one"}).status_code == 404
+    # Its version is still referenced: never pruned, and the routine only archives.
+    client.post(f"/api/routines/{r['id']}/versions", headers=TRAV, json={
+        "parent_version_id": v1, "exercises": [{"exercise_id": ex["id"], "sets": [{"reps_min": 6}]}]})
+    assert client.get(f"/api/routines/{r['id']}/versions/{v1}", headers=TRAV).status_code == 200
+    assert client.delete(f"/api/workouts/{kept.json()['id']}", headers=TRAV).status_code == 204
+    assert client.delete(f"/api/routines/{r['id']}", headers=TRAV).json()["detail"]["code"] == "in_use"

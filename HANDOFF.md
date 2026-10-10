@@ -458,7 +458,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 - **Offline:** Edit and Delete are disabled with "Editing and deleting need a connection." The editor keeps typed changes but won't save until the connection is back.
 - **Phone:** a 410 drops the workout from the queue (no Needs attention). After a save or delete, this device updates its copy right away and refreshes; others catch up on their next refresh.
 - **Labels:** "Edited" with the last edit's date in History, on exercise pages' session lists, and on the detail page.
-- **Tests:** 84 backend (new `tests/test_edits.py`: one change log row with before and after and the revision bump; an identical save writes nothing; a stale revision is 409; 422 and nothing written for a bad weight, no exercises, zero duration, and an end in the future; the date on a time edit, with the 4 AM rollover; delete with its log row and gone from history, the offline copy, both exports, and the one-workout export; 410 on upload; a retried first upload after an edit is 200 and changes nothing while other content is 409; Hevy re-import skips a deleted import; another user's edit and delete are 404 and she can edit and delete her own; a direct UPDATE of `deleted_at` or `edit_revision` is rejected, and no new workout can start deleted), 59 frontend (new: a record moves when an edit removes its set; the queue drops a 410 without Needs attention; the copy drops a deleted workout and replaces an edited one in start order).
+- **Tests:** 86 backend (new `tests/test_edits.py`: one change log row with before and after and the revision bump; an identical save writes nothing; a stale revision is 409; 422 and nothing written for a bad weight, no exercises, an exercise with no sets, zero duration, and an end in the future; the date on a time edit, with the 4 AM rollover; delete with its log row and gone from history, the offline copy, both exports, and the one-workout export; 410 on upload; a retried first upload after an edit is 200 and changes nothing (upload_hash unchanged) while other content is 409; a deleted workout leaves save as routine and the Versions list but keeps its version; Hevy re-import skips a deleted import; with both users holding workouts, edit and delete of the other's are 404 and each can edit and delete their own; a direct UPDATE of `deleted_at` or `edit_revision` is rejected, and no new workout can start deleted), 59 frontend (new: a record moves when an edit removes its set; the queue drops a 410 without Needs attention; the copy drops a deleted workout and replaces an edited one in start order).
 
 ### Choices made while building (not in the spec)
 
@@ -483,7 +483,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Airplane mode: Edit and Delete disabled with a reason | pending on phone |
 | A hand-run UPDATE of `deleted_at` in psql is rejected | tested; on live: `docker compose exec db psql -U liftlog -c "UPDATE workouts SET deleted_at = now()"` should fail |
 | Wife can't see, edit, or delete his workouts, and can edit and delete her own | tested; pending on her phone |
-| Tests pass; dump first; memory under limits; web and APK same commit | 84 backend, 59 frontend, build passes; deploy and APK: check live (section 3) |
+| Tests pass; dump first; memory under limits; web and APK same commit | 86 backend, 59 frontend, build passes; deploy and APK: check live (section 3) |
 
 ## 15. Known gaps
 
