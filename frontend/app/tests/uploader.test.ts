@@ -46,6 +46,20 @@ test("a refused workout is marked and doesn't block the ones after it", async ()
   assert.equal(problem, "refused 422");
 });
 
+test("a workout that needs attention isn't retried on its own, only from its own Retry", async () => {
+  const s = server({ b: 409 });
+  const queue = [q("a", 1), q("b", 2), q("c", 3)];
+  await uploadQueue(queue, ME, s.deps);
+  // What the phone keeps afterward: b marked with its reason, a and c gone.
+  const after = [{ ...queue[1], error: "refused" }, q("d", 4)];
+  s.log.length = 0;
+  await uploadQueue(after, ME, s.deps);
+  assert.deepEqual(s.log, ["put d", "uploaded d"]);
+  s.log.length = 0;
+  await uploadQueue(after, ME, s.deps, "b");
+  assert.deepEqual(s.log, ["put b", "refused b: The server already has a different workout saved under this one's id, so it wasn't replaced."]);
+});
+
 test("no connection stops the loop and keeps everything queued", async () => {
   const s = server({ b: 0 });
   assert.equal(await uploadQueue([q("a", 1), q("b", 2), q("c", 3)], ME, s.deps), OFFLINE);

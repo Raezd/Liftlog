@@ -95,7 +95,7 @@ export function WorkoutDone() {
         ))}
       </dl>
       <p role="status" className="mb-5 text-muted">
-        {!waiting ? "Uploaded." : waiting.error ? waiting.error
+        {!waiting ? "Uploaded." : waiting.error ? `The server didn't take it: ${waiting.error} It's kept on this phone under Needs attention.`
           : off.syncing ? "Uploading..." : "Saved on this phone. It uploads when you're back online."}
       </p>
       <Link to="/" className={`${btn.primary} w-full`}>Done</Link>

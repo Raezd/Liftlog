@@ -43,8 +43,8 @@ export function useStartWorkout() {
       let routine: RoutineDetail | undefined;
       if (routineId) {
         try {
-          // The current version from the server when it answers quickly, else the copy.
-          routine = await cached(() => api<RoutineDetail>(`/api/routines/${routineId}`, { timeoutMs: 6000 }),
+          // The current version from the server if it answers within 2 seconds, else the copy.
+          routine = await cached(() => api<RoutineDetail>(`/api/routines/${routineId}`, { timeoutMs: 2000 }),
             (c) => routineFromCopy(c, routineId))();
         } catch (e) {
           setProblem((e as Error).message);

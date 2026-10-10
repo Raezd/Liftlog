@@ -148,13 +148,15 @@ async function remember(w: WorkoutDetail) {
 
 let syncing: Promise<void> | null = null;
 
-/** Uploads every queued workout that belongs to whoever is signed in. */
-export function syncNow(): Promise<void> {
+/** Uploads every waiting workout that belongs to whoever is signed in, or
+ *  just `only` (a Needs attention workout's own Retry). */
+export function syncNow(only?: string): Promise<void> {
+  if (syncing && only) return syncing.then(() => syncNow(only));
   syncing ??= (async () => {
     await load();
     const queue = sortQueue(await readAll<Queued>("queue"));
     set({ queue });
-    if (!queue.length) return;
+    if (!queue.some((q) => (only ? q.id === only : q.error === null))) return;
     set({ syncing: true });
     let me: Me;
     try {
@@ -171,13 +173,20 @@ export function syncNow(): Promise<void> {
       },
       // The server said no. Keep it on the phone, and say why.
       refused: (q, why) => write(["queue"], (s) => s.queue.put({ ...q, error: why } satisfies Queued)),
-    });
-    set({ queue: sortQueue(await readAll<Queued>("queue")), problem });
+    }, only);
+    // A refusal shows on the workout itself (Needs attention), not here.
+    set({ queue: sortQueue(await readAll<Queued>("queue")), problem: problem === OFFLINE ? OFFLINE : null });
   })().finally(() => {
     syncing = null;
     set({ syncing: false });
   });
   return syncing;
+}
+
+/** Removes a Needs attention workout from the phone, for good. Never automatic. */
+export async function removeQueued(id: string) {
+  await write(["queue"], (s) => s.queue.delete(id));
+  set({ queue: sortQueue(await readAll<Queued>("queue")) });
 }
 
 /** Upload what's waiting, then refresh the copy. */

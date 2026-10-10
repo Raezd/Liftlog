@@ -86,6 +86,10 @@ export type ActiveWorkout = {
   started_at: string;
   routine_id: string | null;
   routine_version_id: string | null;
+  /** The version's content as it was at start, sent with the upload so the
+   *  server can put it back if it was pruned meanwhile. Missing on workouts
+   *  started before this was kept. */
+  version?: RoutineVersion | null;
   exercises: ActiveExercise[];
   /** The exercise whose card is showing (its unit's card). */
   currentKey: string | null;
@@ -112,6 +116,8 @@ export type UploadBody = {
   started_at: string;
   ended_at: string;
   routine_version_id: string | null;
+  /** The started-from version's content, used only if the server pruned it. */
+  routine_version: RoutineVersion | null;
   exercises: {
     id: string;
     exercise_id: string;
@@ -129,7 +135,8 @@ export type Queued = {
   routine_id: string | null;
   queued_at: string;
   body: UploadBody;
-  /** Why the last upload was refused, when the server said no (not just offline). */
+  /** Needs attention: why the server refused it (a 4xx). Not retried
+   *  automatically, only from its own Retry button. Null while waiting. */
   error: string | null;
 };
 
@@ -227,7 +234,7 @@ export function startWorkout(opts: {
   }
   return {
     id: uuid7(), login: opts.login, title: routine?.name ?? "Workout", notes: "", started_at: new Date().toISOString(),
-    routine_id: routine?.id ?? null, routine_version_id: routine?.version.id ?? null,
+    routine_id: routine?.id ?? null, routine_version_id: routine?.version.id ?? null, version: routine?.version ?? null,
     exercises, currentKey: exercises[0]?.key ?? null, rest: null, nextAlertId: 1,
   };
 }
@@ -315,7 +322,7 @@ export function toUpload(w: ActiveWorkout, endedAt: string): UploadBody {
   }
   return {
     title: w.title.trim() || "Workout", notes: w.notes.trim(), started_at: w.started_at, ended_at: endedAt,
-    routine_version_id: w.routine_version_id,
+    routine_version_id: w.routine_version_id, routine_version: w.routine_version_id ? w.version ?? null : null,
     exercises: w.exercises.flatMap((e, i) => {
       const done = e.sets.filter((s) => s.done);
       if (!done.length) return [];

@@ -313,8 +313,8 @@ Then install the new APK on both phones from /download. After the deploy, check 
 - An exercise added during a workout gets as many sets as last time, prefilled from it, or one empty set.
 - Workout exercises keep the routine's notes for that exercise, so save as routine still carries them.
 - Finish is disabled until at least one set is done; discard is offered instead.
-- Starting from a routine uses the server's current version if it answers within 6 seconds, else the copy.
-- A finished workout whose routine version was pruned while it was offline (the routine was edited on desktop meanwhile) uploads with no version link rather than failing forever.
+- Starting from a routine used the server's current version if it answered within 6 seconds, else the copy. Now 2 seconds (section 10).
+- A finished workout whose routine version was pruned while it was offline was first stored with no version link. Superseded by section 10, which recreates the version.
 - Upload response codes beyond the spec: a taken exercise or set id is 409 `id_taken`; bad values are 422.
 
 ### Acceptance
@@ -335,12 +335,26 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | A hand-run UPDATE on a finished set in psql is rejected | tested; pending on live (`docker compose exec db psql -U liftlog -c "UPDATE sets SET reps = reps"` should fail with "finished workouts are immutable") |
 | Tests pass; dump before migration; memory under limits | 56 backend, 18 frontend, build passes; deploy pending |
 
-## 10. Known gaps
+## 10. Spec 5a follow-ups: version recreation, Needs attention, sync tests
+
+**Status:** built, tested, and committed. **Not deployed:** same as section 9, Trav runs `scripts/deploy.sh`, then `scripts/android-build.sh` and `scripts/android-publish.sh` from the same commit. No migration in this change.
+
+- **Version recreation** (rule in `CLAUDE.md`, Offline model and sync): the phone keeps the started-from version's content with the workout and sends it as `routine_version`. If the server pruned that version meanwhile, it recreates it under its original id as an older, non-current version with no parent, and links the workout. Someone else's routine or version is 404 and recreates nothing; a deleted routine means no link.
+- **Needs attention:** a workout refused with a 4xx shows in the waiting bar with the reason and Copy as JSON, Retry, and Remove from phone (confirmed). It's never retried or removed automatically and never blocks the queue. The summary screen says so too.
+- **Start** waits at most 2 seconds for the server's current version, then uses the copy.
+- **Refactor:** `session.ts` imports name their `.ts` files (`allowImportingTsExtensions` in `tsconfig.json`), and the upload loop is `lib/uploader.ts`, so Node's test runner loads both. One behavior difference from section 9: a 5xx or a non-HTTP failure now stops the loop like no connection does, instead of marking the workout refused.
+- **Tests:** 60 backend, 24 frontend. New: a retry with trailing-zero lb weights and microsecond timestamps is 200 and leaves one workout; a queued workout feeds prefill, the last-session strip, and the rest lookup as the same routine (`tests/session.test.ts`); refused uploads don't block later ones, aren't retried on their own, and retry alone (`tests/uploader.test.ts`); a pruned version is recreated under its id as non-current and linked; another user's routine or version is 404 and recreates nothing; a deleted routine lands unlinked.
+
+| Check | Result |
+|---|---|
+| Workout from a routine in progress in airplane mode, routine edited and saved on desktop, workout finished and uploaded: linked to its routine and its version, which Versions lists | recreation tested; pending on phone (Trav) |
+| Start opens within about 2 seconds on weak signal | pending (Trav) |
+| Tests pass; dump before migration; memory under limits; web and APK same commit | 60 backend, 24 frontend, build passes; deploy pending |
+
+## 11. Known gaps
 
 - Routine editing needs a connection. Offline editing comes after v1 (the conflict check and client ids are ready for it).
 - History and the workout view are online only. A workout waiting to upload shows in the unsynced count, not in History, until it uploads.
-- A workout the server refuses with 409 (same id, different content) stays queued with the reason shown, and there's no button to drop it. It shouldn't happen: ids are made on the phone and the content never changes after finish.
-- A workout started from a version that gets pruned before the workout uploads (the routine edited on another device meanwhile) is stored without its version link, so prefill won't treat it as the same routine.
 - The triggers' escape hatch is a transaction-local setting, so someone with direct database access can still set it by hand. The rule they enforce is against accidents and app bugs, not the database owner.
 - Deleting a user who has finished workouts is refused by the triggers (no flow deletes users).
 - Reordering while archived routines are hidden leaves their positions alone, so a restored one can land between others.

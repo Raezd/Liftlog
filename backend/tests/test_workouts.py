@@ -239,3 +239,68 @@ def test_offline_copy_has_everything_and_only_the_callers(client, db):
     hers = client.get("/api/offline", headers=PARTNER).json()
     assert hers["me"]["login"] == "partner@example.com"
     assert (hers["exercises"], hers["versions"], hers["workouts"]) == ([], {}, [])
+
+
+def routine_with_snapshot(client, ex, name="Day 1"):
+    r = client.post("/api/routines", headers=TRAV, json={"name": name, "version": {
+        "exercises": [{"exercise_id": ex["id"], "rest_seconds": 120, "notes": "Pause reps",
+                       "sets": [{"set_type": "warmup", "reps_min": 10, "weight_value": "95", "weight_unit": "lb"},
+                                {"reps_min": 5, "reps_max": 8, "weight_value": "185", "weight_unit": "lb"}]}]}}).json()
+    return r, r["current_version"]  # the phone's snapshot is GET /api/routines/{id}'s current_version
+
+
+def with_version(ex_id, snapshot):
+    body = payload(ex_id, version=snapshot["id"])
+    body["routine_version"] = snapshot
+    return body
+
+
+def test_a_version_pruned_while_offline_is_recreated_under_its_id(client, db):
+    ex = bench(client)
+    r, v1 = routine_with_snapshot(client, ex)
+    # Edited on desktop while the workout is offline: v1 is pruned.
+    v2 = client.post(f"/api/routines/{r['id']}/versions", headers=TRAV, json={
+        "parent_version_id": v1["id"], "exercises": [{"exercise_id": ex["id"], "sets": [{"reps_min": 6}]}]}).json()["current_version"]
+    assert client.get(f"/api/routines/{r['id']}/versions/{v1['id']}", headers=TRAV).status_code == 404
+
+    body = with_version(ex["id"], v1)
+    wid, up = upload(client, body)
+    assert up.status_code == 201
+    assert (up.json()["routine_version_id"], up.json()["routine_id"]) == (v1["id"], r["id"])
+    back = client.get(f"/api/routines/{r['id']}/versions/{v1['id']}", headers=TRAV).json()
+    assert (back["number"], back["parent_version_id"]) == (1, None)
+    e = back["exercises"][0]
+    assert (e["exercise_id"], e["rest_seconds"], e["notes"]) == (ex["id"], 120, "Pause reps")
+    assert [(s["set_type"], s["reps_min"], s["reps_max"], s["weight_value"]) for s in e["sets"]] == [
+        ("warmup", 10, 10, "95"), ("normal", 5, 8, "185")]
+    versions = client.get(f"/api/routines/{r['id']}/versions", headers=TRAV).json()
+    assert [(v["id"], v["current"]) for v in versions] == [(v2["id"], True), (v1["id"], False)]
+    assert client.get(f"/api/routines/{r['id']}", headers=TRAV).json()["current_version"]["id"] == v2["id"]
+    # A retry is still the same upload, and makes nothing new.
+    assert upload(client, body, id=wid)[1].status_code == 200
+    assert len(client.get(f"/api/routines/{r['id']}/versions", headers=TRAV).json()) == 2
+
+
+def test_naming_someone_elses_routine_or_version_is_404_and_recreates_nothing(client, db):
+    ex = bench(client)
+    r, v1 = routine_with_snapshot(client, ex)
+    her = bench(client, PARTNER)
+    # His routine, under a version id that doesn't exist.
+    fake = {**v1, "id": str(uuid7())}
+    assert upload(client, with_version(her["id"], fake), PARTNER)[1].status_code == 404
+    # His existing version.
+    assert upload(client, with_version(her["id"], v1), PARTNER)[1].status_code == 404
+    with get_sessionmaker()() as s:
+        assert s.execute(text("SELECT count(*) FROM routine_versions")).scalar_one() == 1
+    assert client.get("/api/workouts", headers=PARTNER).json()["workouts"] == []
+
+
+def test_a_workout_whose_routine_was_deleted_lands_without_a_link(client, db):
+    ex = bench(client)
+    r, v1 = routine_with_snapshot(client, ex)
+    assert client.delete(f"/api/routines/{r['id']}", headers=TRAV).status_code == 204
+    _, up = upload(client, with_version(ex["id"], v1))
+    assert up.status_code == 201
+    assert (up.json()["routine_version_id"], up.json()["routine_id"]) == (None, None)
+    with get_sessionmaker()() as s:
+        assert s.execute(text("SELECT count(*) FROM routine_versions")).scalar_one() == 0

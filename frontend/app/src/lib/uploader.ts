@@ -5,8 +5,10 @@
  *
  * Workouts go up oldest first, only those made by whoever is signed in. When
  * the server can't be reached, the loop stops and everything stays queued.
- * When the server refuses one (a 4xx), it's marked with the reason and the
- * loop moves on, so one bad workout never holds up the rest.
+ * When the server refuses one (a 4xx), it's marked with the reason (Needs
+ * attention) and the loop moves on, so one bad workout never holds up the
+ * rest. A workout that needs attention is skipped from then on, unless it's
+ * retried by itself (`only`).
  *
  * Keep this file free of runtime imports so the tests run with plain Node.
  */
@@ -23,10 +25,12 @@ const CONFLICT = "The server already has a different workout saved under this on
 
 const status = (e: unknown) => (typeof e === "object" && e !== null && "status" in e ? Number((e as { status: unknown }).status) : 0);
 
-/** Uploads `queue` for `login`. Returns the problem to show, if any. */
-export async function uploadQueue<W>(queue: Queued[], login: string, deps: UploadDeps<W>): Promise<string | null> {
+/** Uploads `queue` for `login`, or just the workout `only`. Returns the problem to show, if any. */
+export async function uploadQueue<W>(queue: Queued[], login: string, deps: UploadDeps<W>, only?: string): Promise<string | null> {
   let problem: string | null = null;
-  const mine = queue.filter((q) => q.login === login).sort((a, b) => a.queued_at.localeCompare(b.queued_at));
+  const mine = queue
+    .filter((q) => q.login === login && (only === undefined ? q.error === null : q.id === only))
+    .sort((a, b) => a.queued_at.localeCompare(b.queued_at));
   for (const q of mine) {
     let w: W;
     try {
