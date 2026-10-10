@@ -378,7 +378,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 
 ## 12. Fixes from real use: set numbers, card flow, weight limits, Reopen, export button
 
-**Status:** built and tested; deploy and publish below. No migration. Rules are in `CLAUDE.md` (Offline model and sync: set field limits, set numbering, heavy weight warning, card flow, Needs attention, Reopen; Export).
+**Status:** deployed as `de1edd8` on October 10, 2026 (`predeploy/liftlog-20261010-200213-before-de1edd8.dump`; still `0008`), and Android `26-de1edd8` published to /download. Memory after: backend 66 MiB, db 23 MiB, tailscale 48 MiB, web 12 MiB. Install the new APK on both phones for the checks below. No migration. Rules are in `CLAUDE.md` (Offline model and sync: set field limits, set numbering, heavy weight warning, card flow, Needs attention, Reopen; Export).
 
 - **Set numbering:** warm-ups show W, the rest count from 1 skipping warm-ups, drop and failure sets carry a small tag. On the workout card, the Overview (a row of set labels per exercise, filled when done), and the last-session strip ("W: 95 x 10, 1: 185 x 5, 3 drop: 135 x 8"). Display only.
 - **Card flow:** the rest bar names the next card ("Up next: ..."), or "Last exercise". On the last card Next exercise becomes Finish.
@@ -405,7 +405,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Weight field shows 1102.5 fully; a fifth digit or third decimal does nothing | fits at 360 px in headless Chromium; pending on phone |
 | 2252.5 lb on an exercise whose heaviest is 225 lb warns, and the finish screen lists it | rule tested; pending on phone |
 | Export button opens the page in the browser, and an export downloads there | pending on phone |
-| Tests pass; dump before deploy; memory under limits; web and APK same commit | 68 backend, 44 frontend, build passes; deploy below |
+| Tests pass; dump before deploy; memory under limits; web and APK same commit | 68 backend, 44 frontend, build passes; dump written first; all under limits; both `de1edd8` |
 
 ## 13. Known gaps
 
