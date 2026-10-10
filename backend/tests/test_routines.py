@@ -240,3 +240,31 @@ def test_folders_and_routines_are_private(client, db):
     assert [x["name"] for x in client.get("/api/routines", headers=TRAV).json()["folders"]] == ["PPL"]
     hers = client.get("/api/routines", headers=PARTNER).json()
     assert [(x["name"], [y["name"] for y in x["routines"]]) for x in hers["folders"]] == [("Hers", ["Legs"])]
+
+
+def test_versions_list_the_callers_workouts_and_another_users_version_is_404(client, db):
+    ex = bench(client)
+    r = make_routine(client, ex)
+    v1 = r["current_version"]["id"]
+    first = payload(ex["id"], version=v1, started="2026-10-01T17:00:00Z", title="First")
+    second = payload(ex["id"], version=v1, started="2026-10-08T17:00:00Z", title="Second")
+    w1 = upload(client, first)[1].json()
+    w2 = upload(client, second)[1].json()
+    # The workout names its routine and the version's save date.
+    assert (w2["routine_name"], w2["routine_version_number"]) == ("Day 1", 1)
+    assert w2["routine_version_created_at"] == r["current_version"]["created_at"]
+
+    # The partner's own workout on her own routine never shows up in Trav's list.
+    her_ex = bench(client, PARTNER)
+    hers = client.post("/api/routines", headers=PARTNER, json={"name": "Hers", "version": {"exercises": [
+        {"exercise_id": her_ex["id"], "sets": [{"reps_min": 5}]}]}}).json()
+    assert upload(client, payload(her_ex["id"], version=hers["current_version"]["id"]), headers=PARTNER)[1].status_code == 201
+
+    versions = client.get(f"/api/routines/{r['id']}/versions", headers=TRAV).json()
+    assert [[w["id"] for w in v["workouts"]] for v in versions] == [[w2["id"], w1["id"]]]
+    assert versions[0]["workouts"][0] == {"id": w2["id"], "title": "Second", "workout_date": "2026-10-08"}
+
+    # Another user's routine, its versions, and one version: 404.
+    assert client.get(f"/api/routines/{r['id']}/versions", headers=PARTNER).status_code == 404
+    assert client.get(f"/api/routines/{r['id']}/versions/{v1}", headers=PARTNER).status_code == 404
+    assert client.get(f"/api/routines/{hers['id']}/versions", headers=TRAV).status_code == 404

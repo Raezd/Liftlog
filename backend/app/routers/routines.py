@@ -562,9 +562,16 @@ def save_version(routine_id: uuid.UUID, body: SaveIn, user: CurrentUser, session
 def list_versions(routine_id: uuid.UUID, user: CurrentUser, session: DbSession) -> list[dict]:
     r = owned(session, Routine, routine_id, user)
     vs = session.scalars(select(RoutineVersion).where(RoutineVersion.routine_id == r.id)
-                         .order_by(RoutineVersion.number.desc()))
+                         .order_by(RoutineVersion.number.desc())).all()
+    # The caller's workouts that started from each version, newest first.
+    used: dict[uuid.UUID, list[dict]] = {}
+    for w in session.scalars(select(Workout).where(
+            Workout.user_id == user.id, Workout.routine_version_id.in_([v.id for v in vs]))
+            .order_by(Workout.started_at.desc())):
+        used.setdefault(w.routine_version_id, []).append(
+            {"id": str(w.id), "title": w.title, "workout_date": w.workout_date.isoformat()})
     return [{"id": str(v.id), "number": v.number, "created_at": v.created_at.isoformat(),
-             "current": v.id == r.current_version_id} for v in vs]
+             "current": v.id == r.current_version_id, "workouts": used.get(v.id, [])} for v in vs]
 
 
 @router.get("/routines/{routine_id}/versions/{version_id}")

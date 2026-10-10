@@ -41,15 +41,20 @@ def _iso(t: dt.datetime | None) -> str | None:
     return t.isoformat() if t else None
 
 
-def workout_out(w: Workout, names: dict[uuid.UUID, str], routine_id: uuid.UUID | None) -> dict:
+def workout_out(w: Workout, names: dict[uuid.UUID, str], version: RoutineVersion | None = None,
+                routine_name: str | None = None) -> dict:
     """A workout with its exercises and sets. Display uses each exercise's
-    current name; logged_name is what it was called then."""
+    current name; logged_name is what it was called then. `version` is the
+    routine version it started from, named by its routine and save date."""
     return {
         "id": str(w.id), "title": w.title, "workout_date": w.workout_date.isoformat(),
         "started_at": w.started_at.isoformat(), "ended_at": _iso(w.ended_at),
         "notes": w.notes, "source": w.source,
         "routine_version_id": str(w.routine_version_id) if w.routine_version_id else None,
-        "routine_id": str(routine_id) if routine_id else None,
+        "routine_id": str(version.routine_id) if version else None,
+        "routine_name": routine_name,
+        "routine_version_number": version.number if version else None,
+        "routine_version_created_at": version.created_at.isoformat() if version else None,
         "exercises": [{
             "id": str(e.id), "exercise_id": str(e.exercise_id), "name": names.get(e.exercise_id, e.logged_name),
             "logged_name": e.logged_name, "position": e.position, "superset_group": e.superset_group,
@@ -68,8 +73,9 @@ def workout_out(w: Workout, names: dict[uuid.UUID, str], routine_id: uuid.UUID |
 def full_workouts(session: Session, user: User, ids: list[uuid.UUID] | None = None) -> list[dict]:
     """The caller's workouts, newest first, with everything in them (all of
     them, or just `ids`). The phone caches all of these for offline use."""
-    stmt = (select(Workout, RoutineVersion.routine_id)
+    stmt = (select(Workout, RoutineVersion, Routine.name)
             .outerjoin(RoutineVersion, RoutineVersion.id == Workout.routine_version_id)
+            .outerjoin(Routine, Routine.id == RoutineVersion.routine_id)
             .where(Workout.user_id == user.id)
             .options(selectinload(Workout.exercises).selectinload(WorkoutExercise.sets))
             .order_by(Workout.started_at.desc()))
@@ -78,7 +84,7 @@ def full_workouts(session: Session, user: User, ids: list[uuid.UUID] | None = No
     rows = session.execute(stmt).all()
     names = dict(session.execute(select(UserExercise.id, UserExercise.name).where(
         UserExercise.user_id == user.id)).all())
-    return [workout_out(w, names, rid) for w, rid in rows]
+    return [workout_out(w, names, v, rname) for w, v, rname in rows]
 
 
 @router.get("")
