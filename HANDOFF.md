@@ -419,7 +419,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 - **Server:** workout responses add `routine_name`, `routine_version_number`, `routine_version_created_at`; the versions list adds `workouts` (the caller's only).
 - **Set numbering** on the routine view, version pages, and routine editor (W, then 1, 2, ...). **Up next** in the rest bar now sits on its own full-width line under the timer and wraps.
 - **ECharts 6.1.0** (same as Foodlog), pinned; the chart pages are lazy-loaded so the main bundle stays about the same size (ECharts is a separate 175 kB gzipped chunk).
-- **Tests:** 69 backend (one new: workouts name their routine version, the versions list holds only the caller's workouts, and another user's versions list and version are 404), 55 frontend (new `tests/stats.test.ts`: every record type, dominance, ties, the baseline, warm-ups, 0.05 kg across units, imported and queued workouts, best set per workout, no 1RM for weighted bodyweight, Epley, the finish summary, body-part volume weights, unassigned, Monday weeks and the 4 AM rollover).
+- **Tests:** 69 backend (one new: workouts name their routine version; the versions list holds only the caller's workouts, even with the other user's workout put on that version by hand; another user's versions list and version are 404), 56 frontend (new `tests/stats.test.ts`: every record type, dominance, which set counts when several qualify at the same weight, ties, the baseline, warm-ups, 0.05 kg across units, imported and queued workouts, best set per workout, no 1RM for weighted bodyweight, Epley, the finish summary, body-part volume weights, unassigned, Monday weeks and the 4 AM rollover).
 - **Checked once, not kept:** the functions on a read-only export of the live history: heaviest bench is 225 lb on Oct 10, 2026, matching a SQL query, and last week's (Sep 28) chest count was 4 by both the function and a hand-count query. The new pages rendered in headless Chromium at 360 px wide, light and dark, with no page overflow and no console errors.
 
 ### Choices made while building (not in the spec)
@@ -443,7 +443,7 @@ Nothing below has been run on a phone or in a browser this session (no device or
 | Last week's chest number matches a hand count | 4 and 4 (Sep 28 week, live data) |
 | Workout detail names its routine version; Versions lists that workout | tested; pending on the page |
 | Wife sees only her own records and volume | computed only from her own copy; versions list isolation tested; pending on her phone |
-| Tests pass; dump first; memory under limits; web and APK same commit | 69 backend, 55 frontend, build passes; deploy pending (Trav) |
+| Tests pass; dump first; memory under limits; web and APK same commit | 69 backend, 56 frontend, build passes; deploy pending (Trav) |
 | Routine with two warm-ups shows W, W, 1 on its view page and in the editor | pending on the page |
 | Three-exercise superset shows every name in full under Up next at normal text size | pending on phone |
 

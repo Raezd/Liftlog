@@ -67,6 +67,21 @@ test("best reps at a weight: a set is a record only if no earlier set had as man
   assert.ok(!earned([base, wo("w2", 2, { bench: [set("200", 5)] })], "w2").includes("reps_at_weight"));
 });
 
+test("best reps at a weight: of several qualifying sets within 0.05 kg of each other, the most reps counts, then the first", () => {
+  const base = wo("w1", 1, { bench: [set("200", 3)] });
+  const at = (ws: StatWorkout[]) => records(ws, logging).byWorkout.get("w2")!.filter((p) => p.type === "reps_at_weight");
+  // 225 lb x 5 and 102.06 kg x 7 are the same weight: the 7 counts, and only it.
+  const more = at([base, wo("w2", 2, { bench: [set("225", 5), set("102.06", 7, { unit: "kg" })] })]);
+  assert.equal(more.length, 1);
+  assert.deepEqual([more[0].set!.weight_value, more[0].reps], ["102.06", 7]);
+  // The same weight and reps: the first one logged.
+  const first = at([base, wo("w2", 2, { bench: [set("102.06", 6, { unit: "kg" }), set("225", 6)] })]);
+  assert.deepEqual([first.length, first[0].set!.weight_value], [1, "102.06"]);
+  // A heavier set beyond 0.05 kg beats more reps at a lighter one.
+  const heavier = at([base, wo("w2", 2, { bench: [set("205", 10), set("215", 4)] })]);
+  assert.deepEqual([heavier.length, heavier[0].set!.weight_value], [1, "215"]);
+});
+
 test("warm-ups never count, and within a workout only its best set per type is a record", () => {
   const ws = [
     wo("w1", 1, { bench: [set("135", 5)] }),

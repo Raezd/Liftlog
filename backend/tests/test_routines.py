@@ -260,8 +260,20 @@ def test_versions_list_the_callers_workouts_and_another_users_version_is_404(cli
         {"exercise_id": her_ex["id"], "sets": [{"reps_min": 5}]}]}}).json()
     assert upload(client, payload(her_ex["id"], version=hers["current_version"]["id"]), headers=PARTNER)[1].status_code == 201
 
+    # The API can't link her workout to Trav's version, so put one there by
+    # hand: the list must still leave it out (it filters on the caller too).
+    stray = "01a00000-0000-7000-8000-000000000001"
+    with get_sessionmaker()() as s:
+        s.execute(text("""INSERT INTO workouts (id, user_id, title, started_at, workout_date, source, routine_version_id)
+            SELECT :id, id, 'Not his', '2026-10-09T17:00:00Z', '2026-10-09', 'liftlog', :v FROM users
+            WHERE login = 'partner@example.com'"""), {"id": stray, "v": v1})
+        s.commit()
+
     versions = client.get(f"/api/routines/{r['id']}/versions", headers=TRAV).json()
     assert [[w["id"] for w in v["workouts"]] for v in versions] == [[w2["id"], w1["id"]]]
+    # And hers lists only hers.
+    her_versions = client.get(f"/api/routines/{hers['id']}/versions", headers=PARTNER).json()
+    assert [w["title"] for v in her_versions for w in v["workouts"]] == ["Push"]
     assert versions[0]["workouts"][0] == {"id": w2["id"], "title": "Second", "workout_date": "2026-10-08"}
 
     # Another user's routine, its versions, and one version: 404.
