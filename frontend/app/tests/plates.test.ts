@@ -89,10 +89,9 @@ test("137.5 lb stays exact", () => {
   const r = lb("137.5");
   assert.equal(side(r), "45 1.25");
   assert.equal(r?.kind === "exact" && r.load.total, "137.5");
-  // Hundredths and finer, never floating point.
-  const odd = lb("47.5", [plate("1.25"), plate("0.125")]);
-  assert.equal(side(odd), "1.25");
-  assert.equal(side(lb("45.25", [plate("0.125")])), "0.125");
+  // Whole hundredths, never floating point.
+  assert.equal(side(lb("45.5", [plate("0.25")])), "0.25");
+  assert.equal(side(lb("45.02", [plate("0.01")])), "0.01");
 });
 
 test("mixed units run in grams and show to 0.1", () => {
@@ -107,6 +106,31 @@ test("mixed units run in grams and show to 0.1", () => {
   const m = plateMath({ value: "100", unit: "kg" }, BAR, OLYMPIC_LB);
   assert.equal(m?.kind, "nearest");
   assert.deepEqual(m?.kind === "nearest" && [m.below?.total, m.above?.total], ["99.8", "100.9"]);
+});
+
+test("mixed units: a load that shows as the target is an exact hit", () => {
+  const KG_BAR = { weight_value: "20", weight_unit: "kg" as const };
+  // 60 kg is 132.28 lb: typing 132.3 lb on kg plates is 20 kg a side.
+  const r = plateMath({ value: "132.3", unit: "lb" }, KG_BAR, OLYMPIC_KG);
+  assert.equal(r?.kind, "exact");
+  assert.deepEqual(r?.kind === "exact" && r.load.perSide.map((p) => [p.weight_value, p.weight_unit, p.count]), [["20", "kg", 1]]);
+  assert.equal(r?.kind === "exact" && r.load.total, "132.3");
+  // Tapping a nearest load (134.5, which is 61 kg) gives an exact hit, not the same two choices again.
+  const n = plateMath({ value: "134.5", unit: "lb" }, KG_BAR, OLYMPIC_KG);
+  assert.equal(n?.kind === "exact" && n.load.total, "134.5");
+  assert.deepEqual(n?.kind === "exact" && n.load.perSide.map((p) => p.weight_value), ["20", "0.5"]);
+  // 0.2 lb off isn't a hit.
+  assert.equal(plateMath({ value: "132.5", unit: "lb" }, KG_BAR, OLYMPIC_KG)?.kind, "nearest");
+});
+
+test("a target heavier than anything the plates can make shows the heaviest load and nothing above", () => {
+  // Every plate left out: only the empty bar.
+  const all = OLYMPIC_LB.map((p) => p.id);
+  const r = lb("225", OLYMPIC_LB, all);
+  assert.equal(r?.kind, "nearest");
+  if (r?.kind !== "nearest") return;
+  assert.deepEqual(r.below, { total: "45", perSide: [] });
+  assert.equal(r.above, null);
 });
 
 test("a weight that isn't a number gives nothing", () => {

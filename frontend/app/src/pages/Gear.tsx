@@ -126,7 +126,7 @@ function sheetTitle(e: Editing): string {
   return e.plate ? "Edit plate" : `Add a plate to ${e.set.name}`;
 }
 
-const isWeight = (t: string) => /^\d+(\.\d{1,3})?$/.test(t.trim());
+const isWeight = (t: string) => /^\d+(\.\d{1,2})?$/.test(t.trim());
 
 function EditForm({ editing: e, gear, busy, error, onSave }: {
   editing: Editing; gear: Gear; busy: boolean; error: unknown;
@@ -163,7 +163,7 @@ function EditForm({ editing: e, gear, busy, error, onSave }: {
       {weighted && (
         <>
           <TextField label="Weight" inputMode="decimal" required value={weight} onChange={(x) => setWeight(x.target.value)}
-            hint={e.kind === "bar" ? "Zero is fine for a sled with no weight of its own." : undefined} />
+            hint={e.kind === "bar" ? "Up to two decimal places. Zero is fine for a sled with no weight of its own." : "Up to two decimal places."} />
           <Segmented<WeightUnit> label="Unit" name="gear-unit" value={unit} options={[["lb", "lb"], ["kg", "kg"]]} onChange={setUnit} />
         </>
       )}

@@ -28,8 +28,9 @@ def check_name(name: str, what: str) -> str:
 def check_weight(v: Decimal, zero_ok: bool) -> Decimal:
     if not v.is_finite() or v < 0 or (v == 0 and not zero_ok) or v > 2000:
         raise problem("bad_weight", "Enter a weight from 0 to 2,000." if zero_ok else "Enter a weight above 0.")
-    if v.normalize().as_tuple().exponent < -3:
-        raise problem("bad_weight", "Use at most three decimal places.")
+    # At most hundredths, so plate math (frontend lib/plates.ts) stays in whole hundredths.
+    if v.normalize().as_tuple().exponent < -2:
+        raise problem("bad_weight", "Use at most two decimal places.")
     return v.normalize() if v != 0 else Decimal(0)
 
 

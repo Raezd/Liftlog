@@ -21,7 +21,7 @@ branch_labels = None
 depends_on = None
 
 WEIGHT = ("weight_value > 0 AND weight_value <= 2000 AND weight_unit IN ('lb', 'kg') "
-          "AND scale(weight_value) <= 3")
+          "AND scale(weight_value) <= 2")
 
 
 def _user_fk() -> sa.Column:

@@ -11,9 +11,12 @@
  * - A target the plates can't make gives the nearest load below and above.
  *   A target under the bar says so and shows the empty bar.
  * - Units: when the bar, every plate in use, and the target share a unit,
- *   the math runs in whole hundredths of it (finer if a value needs it), so
- *   137.5 lb stays 137.5. Mixed units run in whole grams and show rounded
- *   to 0.1 in the target's unit.
+ *   the math runs in whole hundredths of it, so 137.5 lb stays 137.5. Gear
+ *   has at most two decimals (the server enforces it); only a target typed
+ *   with more makes the steps finer. Mixed units run in whole grams and show
+ *   rounded to 0.1 in the target's unit. Rounded grams of different units
+ *   rarely line up exactly (1.25 lb is 566.99 g), so in mixed units a load
+ *   that shows as the target, to 0.1, is an exact hit.
  *
  * Keep this file free of runtime imports so the tests run with plain Node.
  */
@@ -147,6 +150,12 @@ export function plateMath(target: { value: string; unit: WeightUnit }, bar: Gear
   while (!reach[0][below]) below--;
   let above = hi;
   while (above <= top && !reach[0][above]) above++;
+  if (!same) {
+    const want = show(t);
+    const hit = [below, ...(above <= top ? [above] : [])].filter((s) => show(b + s * g) === want)
+      .sort((x, y) => Math.abs(b + x * g - t) - Math.abs(b + y * g - t))[0];
+    if (hit !== undefined) return { kind: "exact", unit, load: best(hit) };
+  }
   return { kind: "nearest", unit, below: best(below), above: above <= top ? best(above) : null };
 }
 

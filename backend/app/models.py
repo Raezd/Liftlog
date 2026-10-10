@@ -391,7 +391,7 @@ class RoutineSet(Base):
 
 
 GEAR_WEIGHT = ("weight_value > 0 AND weight_value <= 2000 AND weight_unit IN ('lb', 'kg') "
-               "AND scale(weight_value) <= 3")
+               "AND scale(weight_value) <= 2")
 
 
 class Bar(Base):

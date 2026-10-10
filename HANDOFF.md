@@ -360,8 +360,9 @@ Nothing below has been run on a phone or in a browser this session (no device or
 - **Workout card:** plate button on the weight field opens the plate sheet; nearest-load buttons set the weight; plates unchecked there are left out for this workout only.
 - **Export:** CSV (Hevy layout) and JSON (schema version 1), full history from Settings, Export and one workout from its History page. In the Android app those places show the browser address instead.
 - **Verified:** Trav's real Hevy file, imported into a scratch user and exported again, came out byte for byte the same (one-off check, not kept). Gear endpoints smoke-checked once (not kept: simple CRUD).
-- **Tests:** 62 backend (new `tests/test_export.py`: export privacy, CSV round trip), 35 frontend (new `tests/plates.test.ts`), build passes.
-- **Choices made while building:** gear lists sort by name; the current default bar or plate set can't be deleted until another is picked; a bar may weigh 0 (sleds); weights allow up to 3 decimals; delete in the gear page asks for a second tap; the one-workout JSON carries the same exercises, routines, and gear as the full one.
+- **Tests:** 62 backend (new `tests/test_export.py`: export privacy with every kind of data on both users, CSV round trip), 37 frontend (new `tests/plates.test.ts`), build passes.
+- **Not covered by the round trip:** a set entered in kg by a lb user exports converted to lb, rounded to 0.01 (100 kg is 220.46 lb), and comes back as that lb value. The CSV is the portable copy; JSON keeps it exact.
+- **Choices made while building:** gear lists sort by name; the current default bar or plate set can't be deleted until another is picked; a bar may weigh 0 (sleds); gear weights allow at most 2 decimals (schema, API, and page), so plate math stays in whole hundredths; in mixed units a load that shows as the target to 0.1 counts as exact; delete in the gear page asks for a second tap; the one-workout JSON carries the same exercises, routines, and gear as the full one.
 
 | Check | Result |
 |---|---|

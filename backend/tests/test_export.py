@@ -26,30 +26,50 @@ def exported(client, headers, fmt, path="/api/export"):
     return r
 
 
+def give_everything(client, headers, who):
+    """A workout, an exercise, a folder with a routine, and a custom bar and plate set."""
+    ex = bench(client, headers)
+    wid, r = upload(client, payload(ex["id"], title=f"{who} workout"), headers=headers)
+    assert r.status_code == 201
+    folder = client.post("/api/folders", headers=headers, json={"name": f"{who} folder"}).json()
+    assert client.post("/api/routines", headers=headers, json={"name": f"{who} day", "folder_id": folder["id"], "version": {
+        "exercises": [{"exercise_id": ex["id"], "sets": [{"reps_min": 5, "weight_value": "135", "weight_unit": "lb"}]}]}}).status_code == 201
+    assert client.post("/api/gear/bars", headers=headers, json={
+        "name": f"{who} sled", "weight_value": "75", "weight_unit": "lb"}).status_code == 201
+    assert client.post("/api/gear/plate-sets", headers=headers, json={"name": f"{who} plates"}).status_code == 201
+    return wid
+
+
 def test_exports_are_private(client, db):
     _, res = resolve_all(client, TRAV)
     assert do_import(client, TRAV, res).status_code == 201
-    trav_wid, r = upload(client, payload(bench(client)["id"], title="Trav only"))
-    assert r.status_code == 201
-    _, r = upload(client, payload(bench(client, PARTNER)["id"], title="Partner only"), headers=PARTNER)
-    assert r.status_code == 201
+    trav_wid = give_everything(client, TRAV, "Trav")
+    partner_wid = give_everything(client, PARTNER, "Partner")
 
     for fmt in ("json", "csv"):
         assert client.get(f"/api/workouts/{trav_wid}/export?format={fmt}", headers=PARTNER).status_code == 404
+        assert client.get(f"/api/workouts/{partner_wid}/export?format={fmt}", headers=TRAV).status_code == 404
         mine = exported(client, TRAV, fmt, f"/api/workouts/{trav_wid}/export")
         assert mine.headers["content-disposition"] == f'attachment; filename="liftlog-workout-2026-10-09.{fmt}"'
 
     trav = exported(client, TRAV, "json").json()
     doc = exported(client, PARTNER, "json").json()
     assert doc["schema_version"] == 1 and doc["user"]["login"] == "partner@example.com"
-    assert [w["title"] for w in doc["workouts"]] == ["Partner only"]
-    assert {e["id"] for e in doc["exercises"]}.isdisjoint({e["id"] for e in trav["exercises"]})
+    # Partner's own data is there, and nothing of Trav's.
+    assert [w["id"] for w in doc["workouts"]] == [partner_wid]
     assert len(doc["exercises"]) == 1
-    # Each user has their own copies of the preset gear.
+    assert {e["id"] for e in doc["exercises"]}.isdisjoint({e["id"] for e in trav["exercises"]})
+    assert [f["name"] for f in doc["routines"]["folders"]] == ["Partner folder"]
+    assert [r["name"] for f in doc["routines"]["folders"] for r in f["routines"]] == ["Partner day"]
+    assert doc["routines"]["routines"] == []
+    assert set(doc["routine_versions"]).isdisjoint(trav["routine_versions"]) and len(doc["routine_versions"]) == 1
+    names = lambda g: {b["name"] for b in g["bars"]} | {s["name"] for s in g["plate_sets"]}
+    assert {"Partner sled", "Partner plates"} <= names(doc["gear"])
+    assert not {"Trav sled", "Trav plates"} & names(doc["gear"])
     ids = lambda g: {b["id"] for b in g["bars"]} | {s["id"] for s in g["plate_sets"]}
-    assert doc["gear"]["bars"] and ids(doc["gear"]).isdisjoint(ids(trav["gear"]))
+    assert ids(doc["gear"]).isdisjoint(ids(trav["gear"]))
     rows = list(csv.DictReader(io.StringIO(exported(client, PARTNER, "csv").text)))
-    assert {r["title"] for r in rows} == {"Partner only"}
+    assert {r["title"] for r in rows} == {"Partner workout"}
 
 
 def comparable(doc: dict) -> list:
