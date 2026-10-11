@@ -118,10 +118,12 @@ def value_out(v: MeasureValue) -> dict:
             "value_cm": num(v.value_cm)}
 
 
-def checkin_out(c: MeasureCheckin) -> dict:
+def checkin_out(c: MeasureCheckin, order: dict) -> dict:
+    """Values in site order, left before right, the same however they were loaded."""
+    values = sorted(c.values, key=lambda v: (order.get(v.site_id, (0, "")), v.side or ""))
     return {"id": str(c.id), "date": c.date.isoformat(), "body_fat_pct": num(c.body_fat_pct),
             "body_fat_method": c.body_fat_method, "notes": c.notes, "created_at": c.created_at.isoformat(),
-            "values": [value_out(v) for v in c.values]}
+            "values": [value_out(v) for v in values]}
 
 
 def body_out(session: Session, user: User) -> dict:
@@ -131,8 +133,9 @@ def body_out(session: Session, user: User) -> dict:
     checkins = session.scalars(select(MeasureCheckin).where(MeasureCheckin.user_id == user.id)
                                .order_by(MeasureCheckin.date.desc()).options(selectinload(MeasureCheckin.values))).all()
     used = {v.site_id for c in checkins for v in c.values}
+    order = {s.id: (s.position, str(s.id)) for s in sites}
     return {
         "length_unit": user.length_unit,
         "sites": [site_out(s, used) for s in sites],
-        "checkins": [checkin_out(c) for c in checkins],
+        "checkins": [checkin_out(c, order) for c in checkins],
     }
