@@ -35,6 +35,8 @@
   --muted: #6E5444;
   --line: #DCC8B6;
   --over: #A8432A;
+  /* A second chart series (right side on body charts), validated against --accent-text. */
+  --chart-2: #1468A0;
   --accent: #D2792B;
   --accent-strong: #9E5316;
   --accent-text: #9E5316;
@@ -50,6 +52,7 @@
     --muted: #C2A58F;
     --line: #4C3528;
     --over: #E8876A;
+    --chart-2: #3E9CC8;
     --accent: #D2792B;
     --accent-strong: #9E5316;
     --accent-text: #D2792B;
@@ -65,6 +68,7 @@
   --muted: #C2A58F;
   --line: #4C3528;
   --over: #E8876A;
+  --chart-2: #3E9CC8;
   --accent: #D2792B;
   --accent-strong: #9E5316;
   --accent-text: #D2792B;

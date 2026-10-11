@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { AlertTriangle, CloudUpload, Dumbbell, History, ListChecks, Settings } from "lucide-react";
+import { AlertTriangle, CloudUpload, Dumbbell, History, ListChecks, Ruler, Settings } from "lucide-react";
 import { useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { reopenQueued } from "../lib/active";
@@ -12,6 +12,7 @@ import { Button, btn } from "./ui";
 const links = [
   { to: "/", label: "Routines", icon: ListChecks, also: ["/routines"] },
   { to: "/history", label: "History", icon: History, also: ["/workouts"] },
+  { to: "/body", label: "Body", icon: Ruler, also: [] },
   { to: "/library", label: "Library", icon: Dumbbell, also: ["/exercises"] },
   { to: "/settings", label: "Settings", icon: Settings, also: [] },
 ];
@@ -27,7 +28,7 @@ export function AppShell() {
         <Outlet />
       </main>
       <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
-        <ul className="mx-auto grid max-w-md grid-cols-4">
+        <ul className="mx-auto grid max-w-md grid-cols-5">
           {links.map(({ to, label, icon: Icon, also }) => {
             const isActive = (to === "/" ? pathname === "/" : under(pathname, to)) || also.some((p) => under(pathname, p));
             return (

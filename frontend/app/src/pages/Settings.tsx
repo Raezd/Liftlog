@@ -8,7 +8,7 @@ import { API_BASE, get, send } from "../lib/api";
 import { checkForUpdate } from "../lib/appUpdate";
 import { refresh } from "../lib/offline";
 import { useMe } from "../lib/queries";
-import type { DistanceUnit, Me, WeightUnit } from "../lib/types";
+import type { DistanceUnit, LengthUnit, Me, WeightUnit } from "../lib/types";
 import { useOnline } from "../lib/useOnline";
 import { rememberAlertSetting } from "../timer/alertSetting";
 
@@ -23,7 +23,7 @@ function timezones(current: string): [string, string][] {
   return zones.map((z) => [z, z.replaceAll("_", " ")]);
 }
 
-type Form = Pick<Me, "display_name" | "timezone" | "weight_unit" | "distance_unit" | "play_through_silent">;
+type Form = Pick<Me, "display_name" | "timezone" | "weight_unit" | "distance_unit" | "length_unit" | "play_through_silent">;
 
 export default function Settings() {
   const me = useMe();
@@ -34,7 +34,8 @@ export default function Settings() {
   useEffect(() => {
     if (me.data) {
       const { display_name, timezone, weight_unit, distance_unit, play_through_silent } = me.data;
-      setForm({ display_name, timezone, weight_unit, distance_unit, play_through_silent });
+      // A copy saved before measurements has no length unit yet.
+      setForm({ display_name, timezone, weight_unit, distance_unit, length_unit: me.data.length_unit ?? "in", play_through_silent });
     }
   }, [me.data]);
 
@@ -42,6 +43,7 @@ export default function Settings() {
     mutationFn: (f: Form) => send<Me>("PATCH", "/api/me", f),
     onSuccess: (data) => {
       qc.setQueryData(["me"], data);
+      void qc.invalidateQueries({ queryKey: ["body"] });
       rememberAlertSetting(data.play_through_silent);
       void refresh(true);
       setSaved(true);
@@ -64,6 +66,8 @@ export default function Settings() {
               options={[["lb", "Pounds (lb)"], ["kg", "Kilograms (kg)"]]} onChange={(v) => setForm({ ...form, weight_unit: v })} />
             <Segmented<DistanceUnit> label="Distance" name="distance" value={form.distance_unit}
               options={[["mi", "Miles"], ["km", "Kilometers"]]} onChange={(v) => setForm({ ...form, distance_unit: v })} />
+            <Segmented<LengthUnit> label="Body measurements" name="length" value={form.length_unit}
+              options={[["in", "Inches"], ["cm", "Centimeters"]]} onChange={(v) => setForm({ ...form, length_unit: v })} />
           </Card>
           <Card title="Rest timer">
             <label className="flex min-h-11 items-center justify-between gap-3">

@@ -14,7 +14,7 @@ export function palette() {
   const v = (name: string) => css.getPropertyValue(name).trim();
   return {
     ink: v("--ink"), muted: v("--muted"), line: v("--line"), surface: v("--surface"), sunken: v("--sunken"),
-    accent: v("--accent"), accentText: v("--accent-text"), strong: v("--accent-strong"), over: v("--over"),
+    accent: v("--accent"), accentText: v("--accent-text"), strong: v("--accent-strong"), over: v("--over"), chart2: v("--chart-2"),
     font: v("--font-sans") || "sans-serif",
   };
 }

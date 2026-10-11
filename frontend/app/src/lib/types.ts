@@ -1,5 +1,6 @@
 export type WeightUnit = "lb" | "kg";
 export type DistanceUnit = "mi" | "km";
+export type LengthUnit = "in" | "cm";
 
 export type Me = {
   login: string;
@@ -9,6 +10,8 @@ export type Me = {
   weight_unit: WeightUnit;
   distance_unit: DistanceUnit;
   play_through_silent: boolean;
+  /** Body measurements display unit. */
+  length_unit: LengthUnit;
 };
 
 export type Muscle = { id: string; label: string };
@@ -219,7 +222,31 @@ export type OfflineCopy = {
   workouts: WorkoutDetail[];
   /** Missing in copies saved before plate math. */
   gear?: Gear;
+  /** Missing in copies saved before measurements. */
+  body?: Body;
 };
+
+export type BodyFatMethod = "calipers" | "smart_scale" | "dexa" | "navy_tape" | "visual" | "other";
+export type Side = "left" | "right";
+
+/** A place to measure. Paired sites take a left and a right value. */
+export type BodySite = { id: string; name: string; paired: boolean; archived: boolean; position: number; has_values: boolean };
+
+/** As entered, its unit, and normalized cm. */
+export type BodyValue = { id: string; site_id: string; side: Side | null; value: string; unit: LengthUnit; value_cm: string };
+
+export type BodyCheckin = {
+  id: string;
+  date: string;
+  body_fat_pct: string | null;
+  body_fat_method: BodyFatMethod | null;
+  notes: string;
+  created_at: string;
+  values: BodyValue[];
+};
+
+/** GET /api/body, and what every change answers with. Check-ins newest first. */
+export type Body = { length_unit: LengthUnit; sites: BodySite[]; checkins: BodyCheckin[] };
 
 /** Plate math gear (GET /api/gear). Weights as entered plus unit plus kg. */
 export type Bar = { id: string; name: string; weight_value: string; weight_unit: WeightUnit; weight_kg: string };

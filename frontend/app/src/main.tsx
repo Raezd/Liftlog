@@ -8,6 +8,9 @@ import { Download } from "./Download";
 import { currentActive, loadActive } from "./lib/active";
 import { ApiError } from "./lib/api";
 import { getOffline, onOfflineChange, startOffline } from "./lib/offline";
+import Body from "./pages/Body";
+import BodyCheckin from "./pages/BodyCheckin";
+import BodySites from "./pages/BodySites";
 import ExerciseAdd from "./pages/ExerciseAdd";
 import ExerciseEdit from "./pages/ExerciseEdit";
 import Export from "./pages/Export";
@@ -29,6 +32,7 @@ import "./styles.css";
 // The chart pages carry ECharts, so they load on first use.
 const ExerciseView = lazy(() => import("./pages/ExerciseView"));
 const MuscleVolume = lazy(() => import("./pages/MuscleVolume"));
+const BodySite = lazy(() => import("./pages/BodySite"));
 const later = (page: ReactNode) => <Suspense fallback={<p className="text-muted" role="status">Loading...</p>}>{page}</Suspense>;
 
 const queryClient = new QueryClient({
@@ -91,6 +95,10 @@ const router = createBrowserRouter([{ element: <Root />, children: [
       { path: "/exercises/:id", element: later(<ExerciseView />) },
       { path: "/workouts/:id", element: <WorkoutView /> },
       { path: "/workouts/:id/edit", element: <WorkoutEdit /> },
+      { path: "/body", element: <Body /> },
+      { path: "/body/checkins/:id", element: <BodyCheckin /> },
+      { path: "/body/sites", element: <BodySites /> },
+      { path: "/body/sites/:id", element: later(<BodySite />) },
       { path: "/library", element: <Library /> },
       { path: "/library/add", element: <ExerciseAdd /> },
       { path: "/library/:id", element: <ExerciseEdit /> },
