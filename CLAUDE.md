@@ -14,6 +14,7 @@ From `docs/v1-scope.md`, which wins if the two disagree:
 - **Workout date:** the user's timezone with a 4 AM rollover.
 - **Honest numbers.** Label estimates. Show no data as no data, never zero.
 - **Bodyweight and TDEE belong to Foodlog.** Never store bodyweight here or send exercise calories to Foodlog.
+- **Measurements:** one check-in per user per date. Lengths keep the value and unit as entered plus normalized cm, and show exactly as entered in their own unit. Body fat always has a method, and a change is shown only between readings by the same method.
 - **Copy:** short, plain, friendly American English. No em dashes in UI text or docs. No developer text in the UI.
 
 ## Security posture (non-negotiable)
@@ -75,6 +76,7 @@ Before changing workouts, edits, or the triggers, read HANDOFF.md sections 17 an
   | `--accent-strong` | `#9E5316` | `#9E5316` |
   | `--accent-text` | `#9E5316` | `#D2792B` |
   | `--over` | `#A8432A` | `#E8876A` |
+  | `--chart-2` | `#1468A0` | `#3E9CC8` |
 
 - **Layout:** mobile first, single column, `max-w-md`, safe-area insets, rem sizing, tap targets at least 44 px.
 - **Accessibility:** a label on every input, screen-reader text on icon-only buttons and color-only indicators, respect `prefers-reduced-motion`. One focus ring per control, from the base-layer `:focus-visible` rule; see HANDOFF.md section 26 before changing focus styles.
@@ -106,3 +108,4 @@ Before changing workouts, edits, or the triggers, read HANDOFF.md sections 17 an
 | Records, charts, body-part volume, prefill | 25 |
 | Stack, security, and design details; RAM budget | 26 |
 | Tests, commands, git | 27 |
+| Body measurements | 28 |
