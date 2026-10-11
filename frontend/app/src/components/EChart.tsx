@@ -19,6 +19,14 @@ export function palette() {
   };
 }
 
+/** A date x axis with "Sep 17" labels, about three across, for trend charts. Points sit on noon UTC of their date. */
+export function dateAxis(p: ReturnType<typeof palette>) {
+  return {
+    type: "time", splitNumber: 3, axisLine: { lineStyle: { color: p.line } }, splitLine: { show: false },
+    axisLabel: { color: p.muted, hideOverlap: true, formatter: (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }) },
+  };
+}
+
 /** ECharts sizes text in px: scale every font size with the phone's text size. */
 function scaled(option: EChartsCoreOption, s: number, font: string): EChartsCoreOption {
   const walk = (v: unknown): unknown => {

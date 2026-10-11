@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import EChart, { palette } from "../components/EChart";
+import EChart, { dateAxis, palette } from "../components/EChart";
 import { Badge, Card, ErrorText, Loading, Page } from "../components/ui";
 import { inUnit, readings, valueText, type Reading } from "../lib/body";
 import { longDate, shortDate } from "../lib/format";
@@ -60,10 +60,7 @@ function SiteTrend({ site, checkins, unit }: { site: BodySite; checkins: BodyChe
           formatter: (x: { seriesName: string; data: { date: string; text: string } }) =>
             `${longDate(x.data.date)}<br/>${site.paired ? `${x.seriesName}: ` : ""}<b>${x.data.text}</b>`,
         },
-        xAxis: {
-          type: "time", splitNumber: 3, axisLine: { lineStyle: { color: p.line } }, splitLine: { show: false },
-          axisLabel: { color: p.muted, hideOverlap: true, formatter: (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }) },
-        },
+        xAxis: dateAxis(p),
         yAxis: { type: "value", scale: true, splitLine: { lineStyle: { color: p.line } }, axisLabel: { color: p.muted, formatter: (v: number) => v.toLocaleString() } },
         series,
       },

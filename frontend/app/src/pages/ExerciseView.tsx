@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import EChart, { palette } from "../components/EChart";
+import EChart, { dateAxis, palette } from "../components/EChart";
 import { Card, ErrorText, Loading, Page, Segmented, btn } from "../components/ui";
 import { get } from "../lib/api";
 import { EQUIPMENT, LOGGING, duration, longDate, shortDate } from "../lib/format";
@@ -164,7 +164,7 @@ function Trend({ list, logging, unit, distance }: { list: Session[]; logging: Lo
           formatter: (x: { data: { date: string; imported: boolean; value: [number, number] } }) =>
             `${longDate(x.data.date)}<br/><b>${text(x.data.value[1])}</b>${metric === "e1rm" ? " estimated" : ""}${x.data.imported ? "<br/>Imported" : ""}`,
         },
-        xAxis: { type: "time", axisLabel: { color: p.muted, hideOverlap: true }, axisLine: { lineStyle: { color: p.line } }, splitLine: { show: false } },
+        xAxis: dateAxis(p),
         yAxis: {
           type: "value", scale: true, splitLine: { lineStyle: { color: p.line } },
           axisLabel: { color: p.muted, formatter: (v: number) => (metric === "longest_time" ? duration(v) : v.toLocaleString()) },
