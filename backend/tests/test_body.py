@@ -133,10 +133,30 @@ def test_entering_a_site_again_on_a_date_replaces_it(client, db):
     assert got == sorted([(waist["id"], None, "33.75"), (arms["id"], "left", "14"), (arms["id"], "right", "14.5")])
     assert (c["body_fat_pct"], c["body_fat_method"]) == ("20", "smart_scale")
     assert counts() == (1, 3)
-    # Moving another check-in onto that date is refused, not merged.
-    other = checkin(client, [val(waist, "34")], date="2026-10-06").json()["checkins"][0]
-    r = client.put(f"/api/body/checkins/{other['id']}", headers=TRAV, json={"date": "2026-10-05", "values": [val(waist, "1")]})
+
+
+def test_moving_a_checkin_onto_another_ones_date_is_refused(client, db):
+    waist = site(body(client), "Waist")
+    assert checkin(client, [val(waist, "34")], date="2026-10-05").status_code == 201
+    other = checkin(client, [val(waist, "33.5")], date="2026-10-06").json()["checkins"][0]
+    before, stored = counts(), body(client)["checkins"]
+    r = client.put(f"/api/body/checkins/{other['id']}", headers=TRAV,
+                   json={"date": "2026-10-05", "values": [val(waist, "33")]})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "date_taken"
+    # Refused, not merged: both check-ins are as they were.
+    assert counts() == before and body(client)["checkins"] == stored
+
+
+def test_a_checkin_with_no_values_and_no_body_fat_is_refused(client, db):
+    waist = site(body(client), "Waist")
+    assert checkin(client, [val(waist, "34")], date="2026-10-05").status_code == 201
+    before, stored = counts(), body(client)["checkins"]
+    for r in (checkin(client, [], date="2026-10-06"),
+              checkin(client, [], date="2026-10-06", notes="Just a note"),
+              checkin(client, [], date="2026-10-05"),
+              client.put(f"/api/body/checkins/{stored[0]['id']}", headers=TRAV, json={"values": [], "notes": "x"})):
+        assert r.status_code == 422 and r.json()["detail"]["code"] == "empty_checkin", r.text
+    assert counts() == before and body(client)["checkins"] == stored
 
 
 def test_a_site_with_values_can_be_archived_not_deleted(client, db):

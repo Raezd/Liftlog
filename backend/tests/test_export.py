@@ -89,6 +89,23 @@ def test_exports_are_private(client, db):
     assert {r["title"] for r in rows} == {"Partner workout"}
 
 
+def test_one_workout_export_has_no_measurements(client, db):
+    wid = give_everything(client, TRAV, "Trav")
+    full = exported(client, TRAV, "json").json()
+    assert [c["notes"] for c in full["measurements"]["checkins"]] == ["Trav notes"]
+    assert full["measurements"]["checkins"][0]["body_fat_pct"] == "21.5"
+    assert "Trav wrist" in {s["name"] for s in full["measurements"]["sites"]}
+
+    one = exported(client, TRAV, "json", f"/api/workouts/{wid}/export")
+    doc = one.json()
+    assert doc["scope"] == "workout" and [w["id"] for w in doc["workouts"]] == [wid]
+    assert "measurements" not in doc
+    # Nothing about sites, check-ins, or body fat anywhere in the file.
+    text = one.text
+    for word in ("measurements", "checkins", "Trav wrist", "Trav notes", "body_fat", "calipers", "value_cm"):
+        assert word not in text, word
+
+
 def comparable(doc: dict) -> list:
     """What a CSV can carry: workouts, exercises by name, and sets."""
     names = {e["id"]: e["name"] for e in doc["exercises"]}

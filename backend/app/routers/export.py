@@ -4,9 +4,10 @@ file download. Browser only (the Android app points to the browser).
 - JSON is the lossless backup (SCHEMA_VERSION): the workouts with every
   stored field (weights as entered plus unit plus kg, ids, routine version
   links, timezone-aware timestamps), plus the caller's exercises, current
-  routines, gear, and body measurements (every site, archived too, and every
-  check-in with its values as entered plus unit plus cm). One workout exports the same document with just that
-  workout in it.
+  routines, and gear. The full history also has body measurements (every
+  site, archived too, and every check-in with its values as entered plus
+  unit plus cm). One workout exports the same document with just that
+  workout in it and no measurements.
 - CSV is the portable copy, in Hevy's workout export layout (see app/hevy.py
   for the columns, checked against a real export): one row per set, newest
   workout first, text quoted and numbers bare, weights in the user's weight
@@ -104,7 +105,6 @@ def measurements_doc(session: Session, user: User) -> dict:
 
 def json_export(session: Session, user: User, rows, scope: str) -> bytes:
     ensure_seeded(session, user)
-    ensure_sites(session, user)
     exercises = session.scalars(select(UserExercise).where(UserExercise.user_id == user.id)
                                 .order_by(UserExercise.name))
     doc = {
@@ -122,8 +122,11 @@ def json_export(session: Session, user: User, rows, scope: str) -> bytes:
         "routines": list_routines(user, session, archived=True),
         "routine_versions": current_versions(session, user),
         "gear": gear_out(session, user),
-        "measurements": measurements_doc(session, user),
     }
+    # Measurements belong to the full backup, never to one workout's file.
+    if scope == "history":
+        ensure_sites(session, user)
+        doc["measurements"] = measurements_doc(session, user)
     return json.dumps(doc, ensure_ascii=False, indent=2).encode()
 
 
