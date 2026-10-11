@@ -60,7 +60,10 @@ function SiteTrend({ site, checkins, unit }: { site: BodySite; checkins: BodyChe
           formatter: (x: { seriesName: string; data: { date: string; text: string } }) =>
             `${longDate(x.data.date)}<br/>${site.paired ? `${x.seriesName}: ` : ""}<b>${x.data.text}</b>`,
         },
-        xAxis: { type: "time", axisLabel: { color: p.muted, hideOverlap: true }, axisLine: { lineStyle: { color: p.line } }, splitLine: { show: false } },
+        xAxis: {
+          type: "time", splitNumber: 3, axisLine: { lineStyle: { color: p.line } }, splitLine: { show: false },
+          axisLabel: { color: p.muted, hideOverlap: true, formatter: (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }) },
+        },
         yAxis: { type: "value", scale: true, splitLine: { lineStyle: { color: p.line } }, axisLabel: { color: p.muted, formatter: (v: number) => v.toLocaleString() } },
         series,
       },

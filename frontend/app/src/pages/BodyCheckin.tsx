@@ -132,12 +132,14 @@ function Editor({ body, start, opened: openedAtStart, today }: { body: Body; sta
               {sidesOf(s).map((side) => {
                 const k = keyOf(s.id, side);
                 return (
-                  <label key={k} className="flex min-w-0 items-center gap-2">
-                    {side && <span className="w-10 shrink-0 text-sm text-muted">{SIDE_NAME[side]}</span>}
+                  <label key={k} className="block min-w-0">
+                    {side && <span className="block text-sm text-muted" aria-hidden>{SIDE_NAME[side]}</span>}
                     <span className="sr-only">{label(s, side)} in {unitOf(k) === "in" ? "inches" : "centimeters"}</span>
-                    <input inputMode="decimal" value={form.values[k] ?? ""} onChange={(e) => setValue(k, e.target.value)}
-                      className="num block min-h-11 w-full min-w-0 rounded-xl border border-line bg-ground px-3 text-lg" />
-                    <span className="shrink-0 text-muted" aria-hidden>{unitOf(k)}</span>
+                    <span className="flex items-center gap-2">
+                      <input inputMode="decimal" value={form.values[k] ?? ""} onChange={(e) => setValue(k, e.target.value)}
+                        className="num block min-h-11 w-full min-w-0 rounded-xl border border-line bg-ground px-3 text-lg" />
+                      <span className="shrink-0 text-muted" aria-hidden>{unitOf(k)}</span>
+                    </span>
                   </label>
                 );
               })}
