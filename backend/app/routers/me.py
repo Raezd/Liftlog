@@ -16,7 +16,7 @@ def me_out(user) -> dict:
     return {
         "login": user.login, "id": str(user.id), "display_name": user.display_name, "timezone": user.timezone,
         "weight_unit": user.weight_unit, "distance_unit": user.distance_unit,
-        "play_through_silent": user.play_through_silent,
+        "play_through_silent": user.play_through_silent, "length_unit": user.length_unit,
     }
 
 
@@ -32,6 +32,7 @@ class Settings(BaseModel):
     weight_unit: Literal["lb", "kg"] | None = None
     distance_unit: Literal["mi", "km"] | None = None
     play_through_silent: bool | None = None
+    length_unit: Literal["in", "cm"] | None = None
 
 
 @router.patch("/me")
@@ -47,7 +48,7 @@ def update_me(body: Settings, user: CurrentUser, session: DbSession) -> dict:
         except (ZoneInfoNotFoundError, ValueError):
             raise problem("bad_timezone", "Pick a timezone from the list.")
         user.timezone = body.timezone
-    for f in ("weight_unit", "distance_unit", "play_through_silent"):
+    for f in ("weight_unit", "distance_unit", "play_through_silent", "length_unit"):
         if getattr(body, f) is not None:
             setattr(user, f, getattr(body, f))
     session.commit()

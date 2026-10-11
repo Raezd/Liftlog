@@ -81,10 +81,14 @@ class User(Base):
     default_plate_set_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("plate_sets.id", ondelete="SET NULL", name="fk_users_default_plate_set", use_alter=True))
     gear_seeded: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    # Body measurements: display unit, and standard sites copied in on first use (app/body.py).
+    length_unit: Mapped[str] = mapped_column(Text, nullable=False, server_default="in")
+    body_seeded: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[dt.datetime] = _created()
     __table_args__ = (
         CheckConstraint("weight_unit IN ('lb', 'kg')", name="ck_users_weight_unit"),
         CheckConstraint("distance_unit IN ('mi', 'km')", name="ck_users_distance_unit"),
+        CheckConstraint("length_unit IN ('in', 'cm')", name="ck_users_length_unit"),
     )
 
 
@@ -452,3 +456,49 @@ class Plate(Base):
         CheckConstraint("pair_count IS NULL OR pair_count BETWEEN 1 AND 99", name="ck_plates_pair_count"),
         Index("ix_plates_set", "plate_set_id"),
     )
+
+
+# ---------- body measurements (0010, app/body.py) ----------
+
+class MeasureSite(Base):
+    """A place to measure. Paired sites (arms, thighs) take a left and a right value."""
+    __tablename__ = "measure_sites"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    paired: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[dt.datetime] = _created()
+    __table_args__ = (
+        CheckConstraint("btrim(name) <> ''", name="ck_measure_sites_name"),
+        Index("uq_measure_sites_name", "user_id", text("lower(name)"), unique=True),
+    )
+
+
+class MeasureCheckin(Base):
+    """One date's measurements. At most one per user per date."""
+    __tablename__ = "measure_checkins"
+    id: Mapped[uuid.UUID] = _id()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    body_fat_pct: Mapped[Decimal | None] = mapped_column(Numeric)
+    body_fat_method: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    created_at: Mapped[dt.datetime] = _created()
+    values: Mapped[list[MeasureValue]] = relationship(
+        back_populates="checkin", cascade="all, delete-orphan", order_by="MeasureValue.id")
+    __table_args__ = (UniqueConstraint("user_id", "date", name="uq_measure_checkins_date"),)
+
+
+class MeasureValue(Base):
+    """A site's value on a check-in: as entered, its unit (in or cm), and cm."""
+    __tablename__ = "measure_values"
+    id: Mapped[uuid.UUID] = _id()
+    checkin_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("measure_checkins.id", ondelete="CASCADE"), nullable=False)
+    site_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("measure_sites.id", ondelete="RESTRICT"), nullable=False)
+    side: Mapped[str | None] = mapped_column(Text)
+    value: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    unit: Mapped[str] = mapped_column(Text, nullable=False)
+    value_cm: Mapped[Decimal] = mapped_column(Numeric(9, 4), nullable=False)
+    checkin: Mapped[MeasureCheckin] = relationship(back_populates="values")

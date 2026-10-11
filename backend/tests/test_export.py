@@ -27,7 +27,7 @@ def exported(client, headers, fmt, path="/api/export"):
 
 
 def give_everything(client, headers, who):
-    """A workout, an exercise, a folder with a routine, and a custom bar and plate set."""
+    """A workout, an exercise, a folder with a routine, a custom bar and plate set, and measurements."""
     ex = bench(client, headers)
     wid, r = upload(client, payload(ex["id"], title=f"{who} workout"), headers=headers)
     assert r.status_code == 201
@@ -37,6 +37,11 @@ def give_everything(client, headers, who):
     assert client.post("/api/gear/bars", headers=headers, json={
         "name": f"{who} sled", "weight_value": "75", "weight_unit": "lb"}).status_code == 201
     assert client.post("/api/gear/plate-sets", headers=headers, json={"name": f"{who} plates"}).status_code == 201
+    sites = client.post("/api/body/sites", headers=headers, json={"name": f"{who} wrist", "paired": False}).json()["sites"]
+    wrist = next(s for s in sites if s["name"] == f"{who} wrist")
+    assert client.post("/api/body/checkins", headers=headers, json={
+        "date": "2026-10-08", "body_fat_pct": "21.5", "body_fat_method": "calipers", "notes": f"{who} notes",
+        "values": [{"site_id": wrist["id"], "value": "6.75", "unit": "in"}]}).status_code == 201
     return wid
 
 
@@ -54,7 +59,7 @@ def test_exports_are_private(client, db):
 
     trav = exported(client, TRAV, "json").json()
     doc = exported(client, PARTNER, "json").json()
-    assert doc["schema_version"] == 1 and doc["user"]["login"] == "partner@example.com"
+    assert doc["schema_version"] == 2 and doc["user"]["login"] == "partner@example.com"
     # Partner's own data is there, and nothing of Trav's.
     assert [w["id"] for w in doc["workouts"]] == [partner_wid]
     assert len(doc["exercises"]) == 1
@@ -68,6 +73,18 @@ def test_exports_are_private(client, db):
     assert not {"Trav sled", "Trav plates"} & names(doc["gear"])
     ids = lambda g: {b["id"] for b in g["bars"]} | {s["id"] for s in g["plate_sets"]}
     assert ids(doc["gear"]).isdisjoint(ids(trav["gear"]))
+    # Measurements: every stored field, and only the caller's.
+    m, tm = doc["measurements"], trav["measurements"]
+    assert {s["id"] for s in m["sites"]}.isdisjoint({s["id"] for s in tm["sites"]})
+    assert "Partner wrist" in {s["name"] for s in m["sites"]} and "Trav wrist" not in {s["name"] for s in m["sites"]}
+    (c,) = m["checkins"]
+    wrist = next(s for s in m["sites"] if s["name"] == "Partner wrist")
+    assert set(wrist) == {"id", "name", "paired", "archived", "position", "created_at"}
+    assert c["id"] != tm["checkins"][0]["id"] and c["notes"] == "Partner notes"
+    assert (c["date"], c["body_fat_pct"], c["body_fat_method"]) == ("2026-10-08", "21.5", "calipers")
+    assert [{k: v for k, v in x.items() if k != "id"} for x in c["values"]] == [
+        {"site_id": wrist["id"], "side": None, "value": "6.75", "unit": "in", "value_cm": "17.145"}]
+    assert doc["user"]["length_unit"] == "in"
     rows = list(csv.DictReader(io.StringIO(exported(client, PARTNER, "csv").text)))
     assert {r["title"] for r in rows} == {"Partner workout"}
 

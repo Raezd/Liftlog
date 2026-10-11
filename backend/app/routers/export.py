@@ -4,7 +4,8 @@ file download. Browser only (the Android app points to the browser).
 - JSON is the lossless backup (SCHEMA_VERSION): the workouts with every
   stored field (weights as entered plus unit plus kg, ids, routine version
   links, timezone-aware timestamps), plus the caller's exercises, current
-  routines, and gear. One workout exports the same document with just that
+  routines, gear, and body measurements (every site, archived too, and every
+  check-in with its values as entered plus unit plus cm). One workout exports the same document with just that
   workout in it.
 - CSV is the portable copy, in Hevy's workout export layout (see app/hevy.py
   for the columns, checked against a real export): one row per set, newest
@@ -28,9 +29,10 @@ from fastapi import APIRouter, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.body import body_out, ensure_sites
 from app.gear import ensure_seeded, gear_out
 from app.library import exercise_out
-from app.models import RoutineVersion, User, UserExercise, Workout, WorkoutExercise
+from app.models import MeasureSite, RoutineVersion, User, UserExercise, Workout, WorkoutExercise
 from app.routers.offline import current_versions
 from app.routers.routines import list_routines
 from app.units import KG_PER, M_PER
@@ -38,7 +40,8 @@ from app.users import CurrentUser, DbSession, not_found
 
 router = APIRouter(prefix="/api")
 
-SCHEMA_VERSION = 1
+# 2: measurements and the length unit.
+SCHEMA_VERSION = 2
 Format = Literal["json", "csv"]
 
 HEVY_TEXT = ("title", "start_time", "end_time", "description", "exercise_title")
@@ -89,8 +92,19 @@ def workout_doc(w: Workout, routine_id: uuid.UUID | None) -> dict:
     }
 
 
+def measurements_doc(session: Session, user: User) -> dict:
+    """Every stored field of the caller's sites and check-ins."""
+    doc = body_out(session, user)
+    created = dict(session.execute(select(MeasureSite.id, MeasureSite.created_at)
+                                   .where(MeasureSite.user_id == user.id)).all())
+    sites = [{k: v for k, v in s.items() if k != "has_values"} | {"created_at": _iso(created[uuid.UUID(s["id"])])}
+             for s in doc["sites"]]
+    return {"sites": sites, "checkins": doc["checkins"]}
+
+
 def json_export(session: Session, user: User, rows, scope: str) -> bytes:
     ensure_seeded(session, user)
+    ensure_sites(session, user)
     exercises = session.scalars(select(UserExercise).where(UserExercise.user_id == user.id)
                                 .order_by(UserExercise.name))
     doc = {
@@ -99,7 +113,8 @@ def json_export(session: Session, user: User, rows, scope: str) -> bytes:
         "user": {
             "id": str(user.id), "login": user.login, "display_name": user.display_name, "timezone": user.timezone,
             "weight_unit": user.weight_unit, "distance_unit": user.distance_unit,
-            "play_through_silent": user.play_through_silent, "created_at": _iso(user.created_at),
+            "play_through_silent": user.play_through_silent, "length_unit": user.length_unit,
+            "created_at": _iso(user.created_at),
         },
         "workouts": [workout_doc(w, rid) for w, rid in rows],
         "exercises": [{**exercise_out(e), "created_at": _iso(e.created_at)} for e in exercises],
@@ -107,6 +122,7 @@ def json_export(session: Session, user: User, rows, scope: str) -> bytes:
         "routines": list_routines(user, session, archived=True),
         "routine_versions": current_versions(session, user),
         "gear": gear_out(session, user),
+        "measurements": measurements_doc(session, user),
     }
     return json.dumps(doc, ensure_ascii=False, indent=2).encode()
 
